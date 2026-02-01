@@ -246,6 +246,10 @@ is_key_down :: inline (key : Input.Key_Code) -> bool #must {
 	return (Input.input_button_states[cast (s64) key] & .DOWN) != 0;
 }
 
+is_key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
+	return (Input.input_button_states[cast (s64) key] & .START) != 0;
+}
+
 Windowed_Program_3D :: struct {
 
     using #as wp : Windowed_Program;
