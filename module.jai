@@ -11,6 +11,7 @@ Input :: #import "Input";
 #import "tbx/camera";
 #import "tbx/movement";
 #import "tbx/rectangle";
+#import "tbx/time";
 
 Current_Menu :: enum {
     MAIN;
@@ -33,7 +34,21 @@ Windowed_Program :: struct {
 
     current_menu := Current_Menu.MAIN;
 
-    max_fps : u32 = 60;
+    vsync := false;
+
+    // when vsync is active, none of the following things come into effect vvv
+
+    // max_fps : u32 = 60;
+    max_fps : u32 = 144;
+    // frames must take at least this long, they may be longer, and in that case our fps will be under 60, which is what we want.
+    // if they were any shorter we'd get over 60, which is not what we want because we set our max_fps above.
+    min_frame_time :float;
+
+    tick_timer : Periodic_Timer;
+
+    current_frame_start : Apollo_Time;
+    delta_time :float; 
+
 
     fullscreen := false;
 
@@ -41,7 +56,11 @@ Windowed_Program :: struct {
 
     current_theme: s32 = xx Default_Themes.Default;
     my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
-    
+}
+
+set_max_fps :: (using wp: *Windowed_Program, new_max_fps : u32) {
+    max_fps = new_max_fps;
+    min_frame_time = 1.0 / max_fps;
 }
 
 init :: (using wp: *Windowed_Program) {
@@ -51,9 +70,34 @@ init :: (using wp: *Windowed_Program) {
     proc := default_theme_procs[current_theme];
     my_theme = proc();
     set_default_theme(my_theme); 
+    min_frame_time = 1.0 / max_fps;
+    // we're just setting it to this so the first iteration has a value.
+    delta_time = min_frame_time;
+    set_vsync(vsync);
 }
 
+mark_frame_start :: (using wp: *Windowed_Program) {
+    current_frame_start = current_time_monotonic();
+}
+
+sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
+    if vsync return;
+
+    while true {
+        current_time := current_time_monotonic();
+        if to_float64_seconds(current_time - current_frame_start) >= min_frame_time break;
+    }
+}
+
+mark_frame_end :: (using wp: *Windowed_Program) {
+    frame_end := current_time_monotonic();
+    delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
+}
+
+
 per_frame_update :: (using wp: *Windowed_Program) {
+    mark_cycle(*tick_timer);
+
     apollo_current_time := current_time_consensus();
     current_time := to_float64_seconds(apollo_current_time);
 
@@ -167,7 +211,7 @@ render_graphics_settings :: (using wp : * Windowed_Program) {
 
     r = get_rect_normalized(0, -.375, 1, .125, xx width, xx height);
 
-    slider(r, *max_fps, 30, 1024, 1, *slider_theme, "max fps: ");
+    slider(r, *max_fps, 30, 512, 1, *slider_theme, "max fps: ");
 
     r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
     if button(r, "back") current_menu = .MAIN;
@@ -178,6 +222,8 @@ render_graphics_settings :: (using wp : * Windowed_Program) {
     r = get_rect_normalized(0.8, -.8, .3, .1, xx width, xx height);
     if button(r, "apply") {
         set_fullscreen(wp, fullscreen);
+        // not sure why setting this here causes the window to just disappear, which is bad.
+        // set_max_fps(wp, max_fps);
     }
 
     defer draw_popups();
@@ -219,6 +265,16 @@ render_menus :: (using wp : *Windowed_Program) {
         case .SOUND_SETTINGS;
             render_user_settings(wp);
     }
+}
+
+render_tick_stats :: (using wp : *Windowed_Program) {
+    average_tick_ms : int = xx (get_average_delta_time(*tick_timer) * 1000);
+    average_fps : int = xx (1 / get_average_delta_time(*tick_timer));
+
+    label_theme := my_theme.label_theme;
+    r := get_rect_normalized(create_rectangle(1, 1, 0.25, 0.1, .TOP_RIGHT), xx window_width, xx window_height);
+
+    label(r,sprint("%/%ms", average_fps, average_tick_ms), *label_theme);
 }
 
 toggle_menu :: (using wp : *Windowed_Program) {
@@ -293,7 +349,7 @@ set_mouse_pointer_position :: inline (x : int, y : int) {
 	}
 }
 
-per_frame_update :: (using wp3 : *Windowed_Program_3D, delta_time : float) {
+per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     per_frame_update(*wp3.wp);
 
