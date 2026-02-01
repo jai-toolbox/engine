@@ -7,10 +7,10 @@ Simp :: #import "Simp";
 Input :: #import "Input";
 #import "GetRect";
 
-#import "opengl";
-#import "camera";
-#import "movement";
-#import "rectangle";
+#import "tbx/opengl";
+#import "tbx/camera";
+#import "tbx/movement";
+#import "tbx/rectangle";
 
 Current_Menu :: enum {
     MAIN;
