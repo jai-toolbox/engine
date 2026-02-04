@@ -21,8 +21,22 @@ Current_Menu :: enum {
     NONE;
 }
 
-Looping_Program :: struct {
+Windowed_Program :: struct {
+    window : Window_Type;
+    saved_window_info : Saved_Window_Info;
+
     end_program := false;
+
+    window_name : string = "";
+
+    window_width : s32 = 1280;
+    window_height : s32 = 720;
+
+    current_menu := Current_Menu.MAIN;
+
+    vsync := false;
+
+    // when vsync is active, none of the following things come into effect vvv
 
     // max_fps : u32 = 60;
     max_fps : u32 = 144;
@@ -34,22 +48,7 @@ Looping_Program :: struct {
 
     current_frame_start : Apollo_Time;
     delta_time :float; 
-}
 
-Windowed_Program :: struct {
-    window : Window_Type;
-    saved_window_info : Saved_Window_Info;
-
-    using #as lp : Looping_Program;
-
-    window_name : string = "";
-
-    window_width : s32 = 1280;
-    window_height : s32 = 720;
-
-    current_menu := Current_Menu.MAIN;
-
-    vsync := false;
 
     fullscreen := false;
 
@@ -77,34 +76,27 @@ init :: (using wp: *Windowed_Program) {
     set_vsync(vsync);
 }
 
-mark_frame_start :: (using lp: *Looping_Program) {
+mark_frame_start :: (using wp: *Windowed_Program) {
     current_frame_start = current_time_monotonic();
 }
 
-sleep_to_maintain_max_fps :: (using lp: *Looping_Program) {
+sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
+    if vsync return;
+
     while true {
         current_time := current_time_monotonic();
         if to_float64_seconds(current_time - current_frame_start) >= min_frame_time break;
     }
 }
 
-sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
-    if vsync return;
-    sleep_to_maintain_max_fps(*lp);
-}
-
-mark_frame_end :: (using lp: *Looping_Program) {
+mark_frame_end :: (using wp: *Windowed_Program) {
     frame_end := current_time_monotonic();
     delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
 }
 
-per_frame_update :: (using lp: *Looping_Program) {
-    mark_cycle(*tick_timer);
-}
 
 per_frame_update :: (using wp: *Windowed_Program) {
-
-    per_frame_update(lp);
+    mark_cycle(*tick_timer);
 
     apollo_current_time := current_time_consensus();
     current_time := to_float64_seconds(apollo_current_time);
