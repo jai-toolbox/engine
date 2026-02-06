@@ -21,11 +21,27 @@ Current_Menu :: enum {
     NONE;
 }
 
+Looping_Program :: struct {
+    end_program := false;
+
+    // max_fps : u32 = 60;
+    max_fps : u32 = 144;
+    // frames must take at least this long, they may be longer, and in that case our fps will be under 60, which is what we want.
+    // if they were any shorter we'd get over 60, which is not what we want because we set our max_fps above.
+    min_frame_time :float;
+
+    tick_timer : Periodic_Timer;
+
+    current_frame_start : Apollo_Time;
+    delta_time :float; 
+}
+
 Windowed_Program :: struct {
+
+    using # as lp : Looping_Program;
+
     window : Window_Type;
     saved_window_info : Saved_Window_Info;
-
-    end_program := false;
 
     window_name : string = "";
 
@@ -38,18 +54,6 @@ Windowed_Program :: struct {
 
     // when vsync is active, none of the following things come into effect vvv
 
-    // max_fps : u32 = 60;
-    max_fps : u32 = 144;
-    // frames must take at least this long, they may be longer, and in that case our fps will be under 60, which is what we want.
-    // if they were any shorter we'd get over 60, which is not what we want because we set our max_fps above.
-    min_frame_time :float;
-
-    tick_timer : Periodic_Timer;
-
-    current_frame_start : Apollo_Time;
-    delta_time :float; 
-
-
     fullscreen := false;
 
     right_handed_mouse_position := false;
@@ -58,12 +62,19 @@ Windowed_Program :: struct {
     my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
 }
 
-set_max_fps :: (using wp: *Windowed_Program, new_max_fps : u32) {
+set_max_fps :: (using lp: *Looping_Program, new_max_fps : u32) {
     max_fps = new_max_fps;
     min_frame_time = 1.0 / max_fps;
 }
 
+init :: (using lp: *Looping_Program) {
+    min_frame_time = 1.0 / max_fps;
+    // we're just setting it to this so the first iteration has a value.
+    delta_time = min_frame_time;
+}
+
 init :: (using wp: *Windowed_Program) {
+    init(*lp);
     window = create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
     ui_init();
@@ -76,27 +87,38 @@ init :: (using wp: *Windowed_Program) {
     set_vsync(vsync);
 }
 
-mark_frame_start :: (using wp: *Windowed_Program) {
+// it's important to note that this can be called on windowed program or windowed program 3d 
+// only because we put the looping program at the very start of both of those structs so 
+// they can prance around as looping programs and when we interpret it as such it's all good. else it would be a memory error
+mark_frame_start :: (using lp: *Looping_Program) {
     current_frame_start = current_time_monotonic();
 }
 
-sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
-    if vsync return;
-
+sleep_to_maintain_max_fps :: (using lp: *Looping_Program) {
     while true {
         current_time := current_time_monotonic();
         if to_float64_seconds(current_time - current_frame_start) >= min_frame_time break;
     }
 }
 
-mark_frame_end :: (using wp: *Windowed_Program) {
+sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
+    if vsync return;
+    sleep_to_maintain_max_fps(*lp);
+}
+
+
+mark_frame_end :: (using lp: *Looping_Program) {
     frame_end := current_time_monotonic();
     delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
 }
 
+per_frame_update :: (using lp: *Looping_Program) {
+    mark_cycle(*tick_timer);
+}
 
 per_frame_update :: (using wp: *Windowed_Program) {
-    mark_cycle(*tick_timer);
+
+    per_frame_update(lp);
 
     apollo_current_time := current_time_consensus();
     current_time := to_float64_seconds(apollo_current_time);
