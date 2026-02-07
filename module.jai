@@ -128,7 +128,14 @@ per_frame_update :: (using wp: *Windowed_Program) {
 }
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
-    toggle_fullscreen(window, enabled, *saved_window_info);
+    saved_window_info.rect.left = 0;
+    saved_window_info.rect.top = 0;
+    saved_window_info.rect.bottom = window_width;
+    saved_window_info.rect.right = window_height;
+
+    // todo need to do somethign with these values right?
+    success, new_width, new_height := toggle_fullscreen(window, enabled, *saved_window_info);
+    fullscreen = enabled;
 }
 
 enable_fullscreen :: (using wp: *Windowed_Program) {
@@ -331,7 +338,9 @@ is_key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
 Windowed_Program_3D :: struct {
 
     using #as wp : Windowed_Program;
+
     per_object_transform_renderer : Per_Object_Transform_Renderer;
+    per_object_absolute_position_color_renderer : Per_Object_Absolute_Position_Color_Renderer;
 
     camera : Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
@@ -344,17 +353,8 @@ Windowed_Program_3D :: struct {
 
 init :: (using wp3 : *Windowed_Program_3D) {
     init(*wp);
-
-    shader_program_handle, success := create_shader_program(VERTEX_SHADER_WITH_CAMERA_AND_PER_OBJECT_TRANSFORMS, VERTEX_COLOR_FRAGMENT_SHADER);
-	if !success
-        log("shader compilation failed");
-		// return false;
-    if success 
-        log("shader compilation succeeded");
-
-    // todo: doing this first is slightly annoying
-    per_object_transform_renderer.shader_program_gl_handle = shader_program_handle;
     init(*per_object_transform_renderer);
+    init(*per_object_absolute_position_color_renderer);
 }
 
 set_mouse_pointer_position :: inline (x : int, y : int) {
@@ -371,15 +371,22 @@ set_mouse_pointer_position :: inline (x : int, y : int) {
 	}
 }
 
-per_frame_update :: (using wp3 : *Windowed_Program_3D) {
+keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
+    #if OS == .WINDOWS {
+        // so that the cursor doesn't fall off the screen.
+        x, y, w, h := get_dimensions(window, right_handed_mouse_position);
+        set_mouse_pointer_position (w / 2, h / 2);
+    } else {
+        // don't yet have ability to hide cursor properly on linux
+    }
+}
 
+per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
     if (current_menu == .NONE) {
         #if OS == .WINDOWS {
-            // so that the cursor doesn't fall off the screen.
-            x, y, w, h := get_dimensions(window, right_handed_mouse_position);
-            set_mouse_pointer_position (w / 2, h / 2);
+            keep_mouse_in_center_of_screen(window);
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
             // don't yet have ability to hide cursor properly on linux
@@ -387,6 +394,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             if success update_angles(*camera, x, y);
         }
     }
+
 
 
     x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
@@ -420,10 +428,10 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     glUseProgram(per_object_transform_renderer.shader_program_gl_handle);
 
-
     row_major := GL_TRUE;
     num_matrices_we_are_updating :u32 = 1;
 
+    // todo one day we will replace glGetUniformLocation with the safe alternative that uses an enum, so we can never type a bad string.
     glUniformMatrix4fv(glGetUniformLocation(per_object_transform_renderer.shader_program_gl_handle, "world_to_camera"), num_matrices_we_are_updating, row_major, *camera.world_to_camera.coef[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(per_object_transform_renderer.shader_program_gl_handle, "camera_to_clip"), num_matrices_we_are_updating, row_major, *camera.camera_to_clip.coef[0][0]);
 
