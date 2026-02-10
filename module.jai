@@ -3,8 +3,11 @@
 #import "Basic";
 #import "GL";
 
+#scope_file
 Simp :: #import "Simp";
 Input :: #import "Input";
+#scope_export
+
 #import "GetRect";
 
 #import "tbx/opengl";
@@ -118,7 +121,7 @@ per_frame_update :: (using lp: *Looping_Program) {
 
 per_frame_update :: (using wp: *Windowed_Program) {
 
-    per_frame_update(lp);
+    per_frame_update(*lp);
 
     apollo_current_time := current_time_consensus();
     current_time := to_float64_seconds(apollo_current_time);
@@ -386,7 +389,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     if (current_menu == .NONE) {
         #if OS == .WINDOWS {
-            keep_mouse_in_center_of_screen(window);
+            keep_mouse_in_center_of_screen(*wp3.wp);
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
             // don't yet have ability to hide cursor properly on linux
