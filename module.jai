@@ -530,6 +530,28 @@ keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
     }
 }
 
+update_listener_orientation :: (position: Vector3, yaw: float) {
+    yaw_quat: Quaternion;
+    // explain why negative yaw...
+    set_from_axis_and_angle(*yaw_quat, 0, 0, 1, -yaw);
+
+    rotation_y: Quaternion;
+    set_from_axis_and_angle(*rotation_y, 0, 1, 0, PI/2);
+    
+    rotation_z: Quaternion;
+    set_from_axis_and_angle(*rotation_z, 0, 0, 1, PI/2);
+
+    // our objects position in the sound system adheres to NEGATIVE_Z_GL_ORIENTATION
+    // listener position assume the STANDARD_ORIENTATION so we have to correct it or else
+    // it going to think left right and up down are reversed, here' we're making our yaw into pitch
+    // todo probably better to put the positions in the right way no? yeah, but this works right now change later if needed.
+    correction_quat := rotation_z * rotation_y;
+
+    listener_orientation := yaw_quat * correction_quat;
+
+    Sound.update_listener(position, listener_orientation);
+}
+
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
@@ -577,25 +599,8 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     if movement_mode != .MANUAL camera.position += camera_velocity * delta_time;
 
+    update_listener_orientation(camera.position, camera.yaw);
 
-    yaw_quat: Quaternion;
-    set_from_axis_and_angle(*yaw_quat, 0, 0, 1, -camera.yaw);
-
-    rotation_y: Quaternion;
-    set_from_axis_and_angle(*rotation_y, 0, 1, 0, PI/2);
-    
-    rotation_z: Quaternion;
-    set_from_axis_and_angle(*rotation_z, 0, 0, 1, PI/2);
-
-    // our objects position in the sound system adheres to NEGATIVE_Z_GL_ORIENTATION
-    // listener position assume the STANDARD_ORIENTATION so we have to correct it or else
-    // it going to think left right and up down are reversed, here' we're making our yaw into pitch
-    // todo probably better to put the positions in the right way no? yeah, but this works right now change later if needed.
-    correction_quat := rotation_z * rotation_y;
-
-    listener_orientation := yaw_quat * correction_quat;
-
-    Sound.update_listener(camera.position, listener_orientation);
     Sound.update(delta_time);
 
     glUseProgram(per_object_transform_renderer.shader_program_gl_handle);
