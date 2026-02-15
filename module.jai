@@ -146,6 +146,9 @@ sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
 
 
 mark_frame_end :: (using lp: *Looping_Program) {
+
+    reset_temporary_storage(); // this probably shouldn't be here, but I'm sneaking it in for now.
+
     frame_end := current_time_monotonic();
     delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
     current_time_sec += delta_time;
@@ -193,10 +196,13 @@ set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
 
     if enabled == fullscreen return; // nothing happens cause it's already how you want.
 
-    saved_window_info.rect.left = 0;
-    saved_window_info.rect.top = 0;
-    saved_window_info.rect.bottom = window_width;
-    saved_window_info.rect.right = window_height;
+
+	#if OS == .WINDOWS {
+        saved_window_info.rect.left = 0;
+        saved_window_info.rect.top = 0;
+        saved_window_info.rect.bottom = window_width;
+        saved_window_info.rect.right = window_height;
+    }
 
     // todo need to do somethign with these values right?
     success, new_width, new_height := toggle_fullscreen(window, enabled, *saved_window_info);
@@ -608,10 +614,8 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     row_major := GL_TRUE;
     num_matrices_we_are_updating :u32 = 1;
 
-    // todo one day we will replace glGetUniformLocation with the safe alternative that uses an enum, so we can never type a bad string.
-    glUniformMatrix4fv(glGetUniformLocation(per_object_transform_renderer.shader_program_gl_handle, "world_to_camera"), num_matrices_we_are_updating, row_major, *camera.world_to_camera.coef[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(per_object_transform_renderer.shader_program_gl_handle, "camera_to_clip"), num_matrices_we_are_updating, row_major, *camera.camera_to_clip.coef[0][0]);
-
+    set_world_to_camera_uniform(per_object_transform_renderer.shader_program_gl_handle, camera.world_to_camera);
+    set_camera_to_clip_uniform(per_object_transform_renderer.shader_program_gl_handle, camera.camera_to_clip);
 }
 
 // this is what you call when you really don't care about control yet, you're just like I want geometry on the screen now and I want menus 
