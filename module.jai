@@ -461,8 +461,8 @@ Windowed_Program_3D :: struct {
     Concrete example we want to know if the basis given by 
     */
  
-    per_object_transform_renderer : Per_Object_Transform_Renderer;
-    per_object_absolute_position_color_renderer : Per_Object_Absolute_Position_Color_Renderer;
+    camera_per_object_transform_color_renderer : Camera_Per_Object_Transform_Color_Renderer;
+    absolute_position_color_renderer : Absolute_Position_Color_Renderer;
 
     camera : Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
@@ -480,8 +480,8 @@ Windowed_Program_3D :: struct {
 
 init :: (using wp3 : *Windowed_Program_3D) {
     init(*wp);
-    init(*per_object_transform_renderer);
-    init(*per_object_absolute_position_color_renderer);
+    init(*camera_per_object_transform_color_renderer);
+    init(*absolute_position_color_renderer);
 }
 
 set_mouse_pointer_position :: inline (x : int, y : int) {
@@ -609,13 +609,13 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     Sound.update(delta_time);
 
-    glUseProgram(per_object_transform_renderer.shader_program_gl_handle);
+    glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
     row_major := GL_TRUE;
     num_matrices_we_are_updating :u32 = 1;
 
-    set_world_to_camera_uniform(per_object_transform_renderer.shader_program_gl_handle, camera.world_to_camera);
-    set_camera_to_clip_uniform(per_object_transform_renderer.shader_program_gl_handle, camera.camera_to_clip);
+    set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, camera.world_to_camera);
+    set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, camera.camera_to_clip);
 }
 
 // this is what you call when you really don't care about control yet, you're just like I want geometry on the screen now and I want menus 
@@ -624,7 +624,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 // this function provides a good starting point to see how to integrate simp and your own rendering logic.
 render_scene :: (using wp3 : *Windowed_Program_3D) {
 
-    for object_indices_to_render queue_render(*wp3.per_object_transform_renderer, it);
+    for object_indices_to_render queue_render(*wp3.camera_per_object_transform_color_renderer, it);
 
     Simp.update_window(wp3.window);
     Simp.clear_render_target(.15, .08, .08, 1);
@@ -634,7 +634,7 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
         glDepthMask(GL_TRUE);
         glEnable(GL_DEPTH_TEST);
         glClear(GL_DEPTH_BUFFER_BIT);
-        render(*wp3.per_object_transform_renderer);
+        render(*wp3.camera_per_object_transform_color_renderer);
 
         context.simp.current_shader = null; 
         // rendering these things should be optional at somepoint but it seems useful for now.
@@ -710,8 +710,8 @@ main :: () {
 
 
     box := create_itpc_with_color_variation(create_box());    
-    box_render_index, box_local_to_world_index := buffer_object(*wp3.per_object_transform_renderer, box.indices, box.positions, box.rgb_colors);
-    wp3.per_object_transform_renderer.local_to_world_matrices[box_local_to_world_index] = make_translation_matrix4(.{1, 1, 1});
+    box_render_index, box_local_to_world_index := buffer_object(*wp3.camera_per_object_transform_color_renderer, box.indices, box.positions, box.rgb_colors);
+    wp3.camera_per_object_transform_color_renderer.local_to_world_matrices[box_local_to_world_index] = make_translation_matrix4(.{1, 1, 1});
 
     array_add(*wp3.object_indices_to_render, box_render_index);
 
