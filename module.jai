@@ -391,6 +391,7 @@ toggle_menu :: (using wp : *Windowed_Program) {
 Camera_Mode :: enum {
     FIRST_PERSON;
     THIRD_PERSON;
+    TWO_DIMENSIONS;
 }
 
 Movement_Mode :: enum {
@@ -475,7 +476,19 @@ Windowed_Program_3D :: struct {
     // you only use this when you're really not doing anything unique in your program and you're fine
     // with the windowed program 3d handling the rendering of your objects so that you don't have to manually render
     // most programs will outgrow this but it's nice at the start
-    object_indices_to_render : [..] u32;
+    renderables : [..] Camera_Per_Object_Transform_Color_Renderable;
+
+
+
+    // 2D camera state
+    ortho_center : Vector2;  // where the camera is looking, starts at origin
+    ortho_height := 10.0;    // controls zoom level
+
+    // drag state
+    is_dragging := false;
+    drag_start_mouse : Vector2;
+    drag_start_center : Vector2;
+
 }
 
 init :: (using wp3 : *Windowed_Program_3D) {
@@ -561,23 +574,20 @@ update_listener_orientation :: (position: Vector3, yaw: float) {
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
-    if (current_menu == .NONE) {
+    if (current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
-            // don't yet have ability to hide cursor properly on linux
             x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
             if success update_angles(*camera, x, y);
         }
     }
 
+    if camera_mode == .TWO_DIMENSIONS show_cursor();
 
-    x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
-    if success update_angles(*camera, x, y);
+    vx, vy, vw, vh := get_dimensions(window, right_handed_mouse_position);
 
-    // "virtual dimensions" makes sense when you have multiple monitors
-    vx, vy, vw, vh := get_dimensions (window, right_handed_mouse_position);
     if camera_mode == {
         case .FIRST_PERSON;
             update_matrices(*camera, vw, vh);
@@ -585,37 +595,100 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             update_matrices_third_person(*camera, vw, vh);
     }
 
-    if movement_mode == {
-        case .GOD;
-            gmi := God_Mode_Input.{
-                is_key_down (xx #char "E"),
-                is_key_down (xx #char "Q"),
-                is_key_down (xx #char "W"),
-                is_key_down (xx #char "S"),
-                is_key_down (xx #char "D"),
-                is_key_down (xx #char "A"),
-                is_key_down (xx #char " "),
-                is_key_down (Input.Key_Code.SHIFT),
-            }; 
-
-
-            // log("doing god with delta time: %", delta_time);
-            camera_velocity = get_new_god_mode_velocity(camera_velocity , get_forward(*camera), gmi, delta_time);
+    if camera_mode != .TWO_DIMENSIONS {
+        if movement_mode == {
+            case .GOD;
+                gmi := God_Mode_Input.{
+                    is_key_down(xx #char "E"),
+                    is_key_down(xx #char "Q"),
+                    is_key_down(xx #char "W"),
+                    is_key_down(xx #char "S"),
+                    is_key_down(xx #char "D"),
+                    is_key_down(xx #char "A"),
+                    is_key_down(xx #char " "),
+                    is_key_down(Input.Key_Code.SHIFT),
+                };
+                camera_velocity = get_new_god_mode_velocity(camera_velocity, get_forward(*camera), gmi, delta_time);
+        }
     }
 
     if movement_mode != .MANUAL camera.position += camera_velocity * delta_time;
 
     update_listener_orientation(camera.position, camera.yaw);
-
     Sound.update(delta_time);
+
+    // Handle 2D drag and scroll
+    if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {
+        aspect := cast(float) vw / cast(float) vh;
+        ortho_width := ortho_height * aspect;
+
+        // scroll to zoom
+        for Input.events_this_frame {
+            if it.type == .MOUSE_WHEEL {
+                if it.wheel_delta > 0 {
+                    ortho_height *= 0.9;
+                    if ortho_height < 0.1  ortho_height = 0.1;
+                } else if it.wheel_delta < 0 {
+                    ortho_height *= 1.1;
+                }
+            }
+        }
+
+        // drag to pan
+        mouse_left_down := is_key_down(xx Input.Key_Code.MOUSE_BUTTON_LEFT);
+
+        mx, my, mouse_success := get_mouse_pointer_position(window, true);
+
+        if mouse_success {
+            // Convert mouse pixel position to world coordinates
+            mouse_world_x := (cast(float) mx / cast(float) vw - 0.5) * ortho_width + ortho_center.x;
+            mouse_world_y := (cast(float) my / cast(float) vh - 0.5) * ortho_height + ortho_center.y;
+
+            if mouse_left_down {
+                if !is_dragging {
+                    is_dragging = true;
+                    drag_start_mouse = .{mouse_world_x, mouse_world_y};
+                    drag_start_center = ortho_center;
+                } else {
+                    // Current mouse in world space using the *original* center (drag_start_center)
+                    current_mouse_world_x := (cast(float) mx / cast(float) vw - 0.5) * ortho_width + drag_start_center.x;
+                    current_mouse_world_y := (cast(float) my / cast(float) vh - 0.5) * ortho_height + drag_start_center.y;
+
+                    ortho_center.x = drag_start_center.x - (current_mouse_world_x - drag_start_mouse.x);
+                    ortho_center.y = drag_start_center.y - (current_mouse_world_y - drag_start_mouse.y);
+                }
+            } else {
+                is_dragging = false;
+            }
+        }
+    }
 
     glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
-    row_major := GL_TRUE;
-    num_matrices_we_are_updating :u32 = 1;
+    if camera_mode != .TWO_DIMENSIONS {
+        set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, camera.world_to_camera);
+        set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, camera.camera_to_clip);
+    } else {
+        world_to_camera := Matrix4_Identity;
+        set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, world_to_camera);
 
-    set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, camera.world_to_camera);
-    set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, camera.camera_to_clip);
+        aspect := cast(float) vw / cast(float) vh;
+        ortho_width := ortho_height * aspect;
+        half_w := ortho_width * 0.5;
+        half_h := ortho_height * 0.5;
+
+        ortho := orthographic_projection_matrix(
+            left   = ortho_center.x - half_w,
+            right  = ortho_center.x + half_w,
+            bottom = ortho_center.y - half_h,
+            top    = ortho_center.y + half_h,
+            near   = -100.0,
+            far    =  100.0,
+            depth_range_01 = false
+        );
+
+        set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, ortho);
+    }
 }
 
 // this is what you call when you really don't care about control yet, you're just like I want geometry on the screen now and I want menus 
@@ -624,7 +697,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 // this function provides a good starting point to see how to integrate simp and your own rendering logic.
 render_scene :: (using wp3 : *Windowed_Program_3D) {
 
-    for object_indices_to_render queue_render(*wp3.camera_per_object_transform_color_renderer, it);
+    for renderables queue_render(*wp3.camera_per_object_transform_color_renderer, it.object_index);
 
     Simp.update_window(wp3.window);
     Simp.clear_render_target(.15, .08, .08, 1);
@@ -684,23 +757,17 @@ On the other hand, a good reason to use this engine is that it allows you to sta
 And so you can start focusing on making a game or something immediately, which is great overtime you'll explore the rooms of the castle and understand its layout. 
 Eventually you'll want to to do something that doesn't exist in the castle, and then you can start moving away from it. Either way here is the highest level of support we currently give:
 
-#import "Basic";
-#import "Math";
-#import "System";
+#import "Basic"; // for print
+#import "Math";  // for make translation matrix
 
-#import "tbx/engine";
-#import "tbx/opengl";
-#import "tbx/geometry";
-Input :: #import "Input";
-Simp :: #import "Simp";
-
-#import "GL";
+#import "tbx/engine";   
+#import "tbx/opengl";   // for buffer object
+#import "tbx/geometry"; // for cube
 
 main :: () {
 	// This is here because on Windows, segfaults and stuff are silent.
 	// If the program ends without printing this message, then something bad happened.
 	defer print ("Program ended gracefully, if you stop seeing this then something bad happend.\n");
-
 
     wp3 : Windowed_Program_3D;
     wp3.vsync = false;
@@ -708,23 +775,41 @@ main :: () {
     wp3.window_name = "my_program";
     init(*wp3);
 
+    box_renderable := array_add(*wp3.renderables);
 
-    box := create_itpc_with_color_variation(create_box());    
-    box_render_index, box_local_to_world_index := buffer_object(*wp3.camera_per_object_transform_color_renderer, box.indices, box.positions, box.rgb_colors);
-    wp3.camera_per_object_transform_color_renderer.local_to_world_matrices[box_local_to_world_index] = make_translation_matrix4(.{1, 1, 1});
+    assign_geometry(box_renderable, create_itpc_with_color_variation(create_box(), .{0.5, 0.5, 0.5}, 0.4));
 
-    array_add(*wp3.object_indices_to_render, box_render_index);
+    buffer_object(*wp3.camera_per_object_transform_color_renderer, box_renderable);
+
+    start_time := current_time_monotonic();
 
     while !wp3.end_program {
         mark_frame_start(*wp3);
         
         per_frame_update(*wp3);
 
+        set_local_to_world_matrix(*wp3.camera_per_object_transform_color_renderer, box_renderable.*, make_transform_matrix4(.{1, 1, 1}, .{0, 1, 0}, elapsed_seconds(start_time) * TAU * 0.25));
+
         render_scene(*wp3);
 
         sleep_to_maintain_max_fps(*wp3);
         mark_frame_end(*wp3);
     }
+}
+
+elapsed_seconds :: (start_time: Apollo_Time) -> float {
+    now := current_time_monotonic();
+    return cast(float) to_float64_seconds(now - start_time);
+}
+
+make_rotation_matrix4 :: (axis: Vector3, angle: float) -> Matrix4 {
+    q: Quaternion;
+    set_from_axis_and_angle(*q, axis, angle);
+    return rotation_matrix(Matrix4, q);
+}
+
+make_transform_matrix4 :: (translation: Vector3, rotation_axis: Vector3, rotation_angle: float) -> Matrix4 {
+    return make_translation_matrix4(translation) * make_rotation_matrix4(rotation_axis, rotation_angle);
 }
 
 In this system you can just create new geometry and modify the transform of objects. Very minimal but at least you don't have to write 500 lines of boilerplate to make it happen.
