@@ -18,6 +18,7 @@ Input :: #import "Input";
 #import "tbx/camera";
 #import "tbx/movement";
 #import "tbx/rectangle";
+#import "tbx/configuration";
 #import "tbx/time";
 #import "tbx/math";
 
@@ -89,6 +90,9 @@ Windowed_Program :: struct {
 
     current_theme: s32 = xx Default_Themes.Default;
     my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
+
+
+    configuration: Configuration;
 }
 
 set_max_fps :: (using lp: *Looping_Program, new_max_fps : u32) {
@@ -119,10 +123,14 @@ init :: (using wp: *Windowed_Program) {
         print("Failed to initialize sound player!\n");
         // return;
     }
+
+    configuration.config_path = "data/engine.cfg";
+    init(*configuration);
 }
 
 deinit :: (using wp: *Windowed_Program) {
     Sound.sound_player_shutdown();
+    deinit(*configuration);
 }
 
 // it's important to note that this can be called on windowed program or windowed program 3d 
@@ -492,9 +500,12 @@ Windowed_Program_3D :: struct {
 }
 
 init :: (using wp3 : *Windowed_Program_3D) {
-    init(*wp);
+    init(*wp); // config is loaded here.
     init(*camera_per_object_transform_color_renderer);
     init(*absolute_position_color_renderer);
+
+    conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
+    if ok_s camera.sensitivity = conf_sens;
 }
 
 set_mouse_pointer_position :: inline (x : int, y : int) {
