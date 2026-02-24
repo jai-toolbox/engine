@@ -509,6 +509,15 @@ init :: (using wp3 : *Windowed_Program_3D) {
 
     conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
     if ok_s camera.sensitivity = conf_sens;
+
+
+    conf_fullscreen, ok_f := get_bool(*configuration, "graphics", "fullscreen");
+    if ok_f {
+        fullscreen = conf_fullscreen;
+        set_fullscreen(wp3, fullscreen);
+    }
+
+
 }
 
 set_mouse_pointer_position :: inline (x : int, y : int) {
