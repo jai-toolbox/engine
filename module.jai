@@ -55,6 +55,9 @@ Looping_Program :: struct {
 
     current_frame_start : Apollo_Time;
     delta_time :float; 
+
+    iteration := 0;
+
 }
 
 
@@ -160,6 +163,7 @@ mark_frame_end :: (using lp: *Looping_Program) {
     frame_end := current_time_monotonic();
     delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
     current_time_sec += delta_time;
+    iteration += 1;
 }
 
 per_frame_update :: (using lp: *Looping_Program) {
@@ -201,8 +205,6 @@ per_frame_update :: (using wp: *Windowed_Program) {
 }
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
-
-    if enabled == fullscreen return; // nothing happens cause it's already how you want.
 
 
 	#if OS == .WINDOWS {
@@ -331,6 +333,7 @@ render_graphics_settings :: (using wp : * Windowed_Program) {
     r = get_rect_normalized(0.8, -.8, .3, .1, xx width, xx height);
     if button(r, "apply") {
         set_fullscreen(wp, fullscreen);
+
         // not sure why setting this here causes the window to just disappear, which is bad.
         // set_max_fps(wp, max_fps);
     }
@@ -547,6 +550,15 @@ render_camera_stats :: (using wp3 : *Windowed_Program_3D) {
     r := get_rect_normalized(create_rectangle(-1, -1, rect_width, rect_height, .BOTTOM_LEFT), xx window_width, xx window_height);
 
     label(r, format_vec3(get_forward(*camera)), *label_theme);
+}
+
+render_iteration :: (using wp3 : *Windowed_Program_3D) {
+    label_theme := my_theme.label_theme;
+    rect_height := 0.1;
+    rect_width := 0.4;
+    r := get_rect_normalized(create_rectangle(1, -1, rect_width, rect_height, .BOTTOM_RIGHT), xx window_width, xx window_height);
+
+    label(r, tprint("%", iteration), *label_theme);
 }
 
 
