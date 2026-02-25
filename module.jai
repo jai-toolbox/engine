@@ -490,6 +490,7 @@ Windowed_Program_3D :: struct {
     renderables : [..] Camera_Per_Object_Transform_Color_Renderable;
 
 
+    last_mouse_delta_x, last_mouse_delta_y: int;
 
     // 2D camera state
     ortho_center : Vector2;  // where the camera is looking, starts at origin
@@ -609,6 +610,8 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     if (current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
+            last_mouse_delta_x = Input.mouse_delta_x;
+            last_mouse_delta_y = Input.mouse_delta_y;
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
             x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
