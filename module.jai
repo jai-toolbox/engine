@@ -206,6 +206,8 @@ per_frame_update :: (using wp: *Windowed_Program) {
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
 
+    if !fullscreen && fullscreen == enabled return;
+
 
 	#if OS == .WINDOWS {
         saved_window_info.rect.left = 0;
