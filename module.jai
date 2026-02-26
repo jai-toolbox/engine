@@ -419,6 +419,28 @@ is_key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
 	return (Input.input_button_states[cast (s64) key] & .START) != 0;
 }
 
+sample_first_person_movement_input :: () -> First_Person_Movement_Input {
+    return .{
+            is_key_down (xx #char "W"),
+            is_key_down (xx #char "S"),
+            is_key_down (xx #char "D"),
+            is_key_down (xx #char "A"),
+            is_key_down (xx #char " "),
+        }; 
+}
+
+get_forward_and_side_input :: (using fpmi : First_Person_Movement_Input) -> forward_input: float, side_input: float {
+    forward_input : float = 0.0;
+    right_input   : float = 0.0;
+
+    if forward_pressed forward_input += 1.0;
+    if back_pressed forward_input    -= 1.0;
+    if right_pressed right_input     += 1.0;
+    if left_pressed right_input      -= 1.0;
+
+    return forward_input, right_input;
+}
+
 /*
 
 A windowed program 3d is something you can use to get to rendering things on the screen fast
