@@ -21,6 +21,7 @@ Input :: #import "Input";
 #import "tbx/configuration";
 #import "tbx/time";
 #import "tbx/math";
+#import "tbx/geometry";
 
 Current_Menu :: enum {
     MAIN;
@@ -525,12 +526,16 @@ Windowed_Program_3D :: struct {
     drag_start_mouse : Vector2;
     drag_start_center : Vector2;
 
+    section_timer : Section_Timer; // this is here so you don't have to make your own.
+    performance_graph: Performance_Graph;
+
 }
 
 init :: (using wp3 : *Windowed_Program_3D) {
     init(*wp); // config is loaded here.
     init(*camera_per_object_transform_color_renderer);
     init(*absolute_position_color_renderer);
+    init_section_timer(*section_timer);
 
     conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
     if ok_s camera.sensitivity = conf_sens;
@@ -776,6 +781,8 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
         render_tick_stats(wp3); // shouldn't this be a pointer?
         render_movement_stats(wp3);
         render_camera_stats(wp3);
+        update_graph_visual(*wp3.performance_graph);
+        render_performance_graph(wp3);
     } else {
         // when you render with your own custom rendering it clobbers the opengl global state or at least would use the program and then set the program to be empty
         // either way simp internally keeps track of the last shader it used and it would be the same as last draw, it doesn't have to re-bind the shader
@@ -807,6 +814,165 @@ hide_cursor :: inline () {
 		// @Todo!
 	}
 }
+
+
+// performance graph stuff
+
+Performance_Graph :: struct {
+    graph_min_ms: float = 4.0;
+    graph_max_ms: float = 25.0;
+
+    GRAPH_STEP_MS :: 0.5;     // additive step for min/max adjustment
+    GRAPH_MS_FLOOR :: 0.0;    // absolute minimum for min_ms
+    GRAPH_MS_CEILING :: 200.0; // absolute maximum for max_ms
+    GRAPH_MIN_RANGE :: 0.5;   // don't let max - min get smaller than this
+}
+
+// theoretically this doesn't need a wp3 to do stuff.
+render_performance_graph :: (using wp3: *Windowed_Program_3D) {
+    push_allocator(temp);
+    graph_renderable := create_frame_time_graph_with_background(
+        *section_timer,
+        graph_origin = .{0.95, -0.95},
+        graph_size = .{0.4, 0.2},
+        min_ms = performance_graph.graph_min_ms,
+        max_ms = performance_graph.graph_max_ms,
+        target_ms = 16.67 // todo change to fit the active wp3 thing.
+    );
+    immediate_render(*wp3.absolute_position_color_renderer, graph_renderable);
+}
+
+update_graph_visual :: (using pg: *Performance_Graph) {
+    // upper bound controls: up/down arrow keys
+    if is_key_just_pressed(.ARROW_UP) {
+        graph_max_ms -= GRAPH_STEP_MS;
+        if graph_max_ms < graph_min_ms + GRAPH_MIN_RANGE  graph_max_ms = graph_min_ms + GRAPH_MIN_RANGE;
+    }
+    if is_key_just_pressed(.ARROW_DOWN) {
+        graph_max_ms += GRAPH_STEP_MS;
+        if graph_max_ms > GRAPH_MS_CEILING  graph_max_ms = GRAPH_MS_CEILING;
+    }
+
+    // lower bound controls: left/right arrow keys
+    if is_key_just_pressed(.ARROW_RIGHT) {
+        graph_min_ms += GRAPH_STEP_MS;
+        if graph_min_ms > graph_max_ms - GRAPH_MIN_RANGE  graph_min_ms = graph_max_ms - GRAPH_MIN_RANGE;
+    }
+    if is_key_just_pressed(.ARROW_LEFT) {
+        graph_min_ms -= GRAPH_STEP_MS;
+        if graph_min_ms < GRAPH_MS_FLOOR  graph_min_ms = GRAPH_MS_FLOOR;
+    }
+}
+
+// these functions integrate with section timers to produce a graph of the performance of the past MAX_HISTORY frames
+// we should eventually try to improve the way we can iterate over section timer history if we make more functions that do this
+// but it should be ok for now.
+
+create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33) -> Indexed_Triangle_Positions_Colors {
+    
+    points: [MAX_HISTORY] Vector2;
+    point_count: int = 0;
+    
+    if st.completed_tree_count == 0 {
+        empty: Indexed_Triangle_Positions_Colors;
+        return empty;
+    }
+    
+    count := cast(int) st.completed_tree_count;
+    
+    oldest_index: int;
+    if count < MAX_HISTORY {
+        oldest_index = 0;
+    } else {
+        oldest_index = cast(int) st.completed_tree_write_index;
+    }
+    
+    range_ms := max_ms - min_ms;
+    if range_ms <= 0 range_ms = 1.0;
+    
+    for i: 0..count-1 {
+        idx := (oldest_index + i) % MAX_HISTORY;
+        root := st.completed_tree_roots[idx];
+        if root == null || !root.completed continue;
+        
+        // x: normalized [0, 1] across the history window
+        // y: frame time normalized into the [min_ms, max_ms] window
+        x_norm := cast(float) i / cast(float) max(count - 1, 1);
+        frame_ms := root.elapsed_seconds * 1000.0;
+        y_norm := clamp((frame_ms - min_ms) / range_ms, 0.0, 1.0);
+        
+        points[point_count] = .{x_norm, y_norm};
+        point_count += 1;
+    }
+    
+    if point_count < 2 {
+        empty: Indexed_Triangle_Positions_Colors;
+        return empty;
+    }
+    
+    points_slice: [] Vector2;
+    points_slice.data = points.data;
+    points_slice.count = point_count;
+    
+    graph_itp := create_graph(points_slice, graph_origin, graph_size);
+    
+    itpc: Indexed_Triangle_Positions_Colors;
+    for graph_itp.indices array_add(*itpc.indices, it);
+    for graph_itp.positions array_add(*itpc.positions, it);
+    
+    color := Vector3.{0.2, 0.8, 0.3};
+    array_reserve(*itpc.rgb_colors, itpc.positions.count);
+    for 1..itpc.positions.count array_add(*itpc.rgb_colors, color);
+    
+    return itpc;
+}
+
+
+// todo this function depends on the coordinate system orientation which is bad.
+create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Colors {
+    itpc: Indexed_Triangle_Positions_Colors;
+
+    range_ms := max_ms - min_ms;
+    if range_ms <= 0 range_ms = 1.0;
+
+    // background quad (furthest back)
+    merge(*itpc, create_itpc_with_color(
+        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
+        .{0.1, 0.1, 0.1}));
+
+    // 1ms tick lines - draw behind graph data
+    line_half_height := graph_size.y * 0.005; // thinner than the target line
+    first_tick_ms := cast(float) cast(int) min_ms + 1.0; // first whole ms above min
+    tick_ms := first_tick_ms;
+    while tick_ms < max_ms {
+        if tick_ms != target_ms { // skip the target ms slot, we'll draw it specially
+            y_norm := (tick_ms - min_ms) / range_ms;
+            if y_norm >= 0.0 && y_norm <= 1.0 {
+                y := graph_origin.y + y_norm * graph_size.y;
+                merge(*itpc, create_itpc_with_color(
+                    create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, 0.01),
+                    .{0.35, 0.35, 0.35})); // subtle grey, behind graph data
+            }
+        }
+        tick_ms += 1.0;
+    }
+
+    // the actual graph data at z = 0 (middle layer)
+    merge(*itpc, create_frame_time_graph(st, graph_origin, graph_size, min_ms, max_ms));
+
+    // target line only show if it's within the visible range (frontmost)
+    target_y_norm := (target_ms - min_ms) / range_ms;
+    if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
+        target_y := graph_origin.y + target_y_norm * graph_size.y;
+        line_half_height_target := graph_size.y * 0.01;
+        merge(*itpc, create_itpc_with_color(
+            create_quad(graph_origin.x, target_y - line_half_height_target, graph_origin.x + graph_size.x, target_y + line_half_height_target, -0.01),
+            .{1.0, 0.0, 0.0}));
+    }
+
+    return itpc;
+}
+
 
 
 
