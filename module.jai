@@ -722,6 +722,9 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
         }
     }
 
+    glUseProgram(absolute_position_color_renderer.shader_program_gl_handle);
+    set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
+
     glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
     if camera_mode != .TWO_DIMENSIONS {
