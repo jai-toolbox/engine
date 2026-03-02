@@ -537,6 +537,12 @@ init :: (using wp3 : *Windowed_Program_3D) {
     init(*absolute_position_color_renderer);
     init_section_timer(*section_timer);
 
+    // we don't need to see below that much because a frame is always slow
+    // never fast?
+    performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
+    performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
+
+
     conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
     if ok_s camera.sensitivity = conf_sens;
 
@@ -837,7 +843,7 @@ render_performance_graph :: (using wp3: *Windowed_Program_3D) {
         graph_size = .{0.4, 0.2},
         min_ms = performance_graph.graph_min_ms,
         max_ms = performance_graph.graph_max_ms,
-        target_ms = 16.67 // todo change to fit the active wp3 thing.
+        target_ms = min_frame_time * 1000
     );
     immediate_render(*wp3.absolute_position_color_renderer, graph_renderable);
 }
