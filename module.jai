@@ -183,7 +183,8 @@ per_frame_update :: (using wp: *Windowed_Program) {
         if it.type == .QUIT then end_program = true;
         if it.type == {
           case .KEYBOARD;
-            if it.key_pressed && it.key_code == .ESCAPE end_program = true;
+          // this is bad. no one wants the program to close if you press escape.
+            // if it.key_pressed && it.key_code == .ESCAPE end_program = true;
         }
     }
 
@@ -503,7 +504,9 @@ Windowed_Program_3D :: struct {
 
     camera : Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
-    camera_active := false;
+
+    // you can use this to override the camera look behavior to disable it if you want.
+    camera_look_active := true;
 
     // only used if you want to use the default movement modes.
     camera_velocity : Vector3;
@@ -642,7 +645,9 @@ update_listener_orientation :: (position: Vector3, yaw: float) {
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
-    if (current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
+    if (camera_look_active && current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
+        // doing this every itertion seems wasteful.
+        hide_cursor();
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
             last_mouse_delta_x = Input.mouse_delta_x;
@@ -652,9 +657,11 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
             if success update_angles(*camera, x, y);
         }
+    } else {
+        show_cursor();
     }
 
-    if camera_mode == .TWO_DIMENSIONS show_cursor();
+    // if camera_mode == .TWO_DIMENSIONS show_cursor();
 
     vx, vy, vw, vh := get_dimensions(window, right_handed_mouse_position);
 
@@ -665,7 +672,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             update_matrices_third_person(*camera, vw, vh);
     }
 
-    if camera_mode != .TWO_DIMENSIONS {
+    if camera_mode != .TWO_DIMENSIONS && camera_look_active { // we're making the choice that if camera look is not active you cannot move.
         if movement_mode == {
             case .GOD;
                 gmi := God_Mode_Input.{
@@ -687,7 +694,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     update_listener_orientation(camera.position, camera.yaw);
     Sound.update(delta_time);
 
-    // Handle 2D drag and scroll
+    // handle 2d drag and scroll
     if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {
         aspect := cast(float) vw / cast(float) vh;
         ortho_width := ortho_height * aspect;
