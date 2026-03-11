@@ -217,9 +217,91 @@ set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
     }
 
     // todo need to do somethign with these values right?
-    success, new_width, new_height := toggle_fullscreen(window, enabled, *saved_window_info);
+    success, new_width, new_height := toggle_fullscreen_exclusive(window, enabled, *saved_window_info);
     fullscreen = enabled;
     set_vsync(vsync);
+}
+
+DEVMODEW :: struct {
+    dmDeviceName        : [32] u16;
+    dmSpecVersion       : u16;
+    dmDriverVersion     : u16;
+    dmSize              : u16;
+    dmDriverExtra       : u16;
+    dmFields            : u32;
+    dmPositionX         : s32;
+    dmPositionY         : s32;
+    dmDisplayOrientation: u32;
+    dmDisplayFixedOutput: u32;
+    dmColor             : s16;
+    dmDuplex            : s16;
+    dmYResolution       : s16;
+    dmTTOption          : s16;
+    dmCollate           : s16;
+    dmFormName          : [32] u16;
+    dmLogPixels         : u16;
+    dmBitsPerPel        : u32;
+    dmPelsWidth         : u32;
+    dmPelsHeight        : u32;
+    dmDisplayFlags      : u32;
+    dmDisplayFrequency  : u32;
+}
+
+DM_BITSPERPEL : u32 : 0x00040000;
+DM_PELSWIDTH  : u32 : 0x00080000;
+DM_PELSHEIGHT : u32 : 0x00100000;
+CDS_FULLSCREEN : u32 : 0x00000004;
+DISP_CHANGE_SUCCESSFUL : s32 : 0;
+
+
+_user32 :: #system_library "user32";
+ChangeDisplaySettingsW :: (lpDevMode: *DEVMODEW, dwflags: u32) -> s32 #foreign _user32;
+
+#import "Windows";
+toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Saved_Window_Info) -> (success: bool, width: s32, height: s32) {
+    assert(saved != null);
+
+    if desire_fullscreen {
+        monitor := MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        info: MONITORINFO;
+        info.cbSize = size_of(type_of(info));
+        if !GetMonitorInfoW(monitor, *info) return false, 0, 0;
+
+        width  := info.rcMonitor.right  - info.rcMonitor.left;
+        height := info.rcMonitor.bottom - info.rcMonitor.top;
+
+        GetWindowRect(hwnd, *saved.rect);
+        saved.style    = GetWindowLongW(hwnd, GWL_STYLE);
+        saved.ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+
+        dm: DEVMODEW;
+        dm.dmSize       = size_of(type_of(dm));
+        dm.dmPelsWidth  = xx width;
+        dm.dmPelsHeight = xx height;
+        dm.dmBitsPerPel = 32;
+        dm.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
+
+        if ChangeDisplaySettingsW(*dm, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL {
+            log("ChangeDisplaySettingsW failed");
+            return false, 0, 0;
+        }
+
+        SetWindowLongW(hwnd, GWL_STYLE,   saved.style    & ~cast(s32)(WS_CAPTION | WS_THICKFRAME));
+        SetWindowLongW(hwnd, GWL_EXSTYLE, saved.ex_style & ~cast(s32)(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, width, height, SWP_FRAMECHANGED);
+
+        return true, width, height;
+    } else {
+        ChangeDisplaySettingsW(null, 0);  // restore desktop mode
+
+        x := saved.rect.left;
+        y := saved.rect.top;
+        SetWindowLongW(hwnd, GWL_STYLE,   saved.style);
+        SetWindowLongW(hwnd, GWL_EXSTYLE, saved.ex_style);
+        SetWindowPos(hwnd, HWND_TOP, x, y, saved.rect.right - x, saved.rect.bottom - y, SWP_FRAMECHANGED);
+
+        return true, saved.rect.right - x, saved.rect.bottom - y;
+    }
 }
 
 enable_fullscreen :: (using wp: *Windowed_Program) {
