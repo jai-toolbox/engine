@@ -873,11 +873,12 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
 
         context.simp.current_shader = null; 
         // rendering these things should be optional at somepoint but it seems useful for now.
-        render_tick_stats(wp3); // shouldn't this be a pointer?
+        render_tick_stats(wp3);
         render_movement_stats(wp3);
         render_camera_stats(wp3);
         update_graph_visual(*wp3.performance_graph);
         render_performance_graph(wp3);
+        render_section_bar_graph(wp3);
     } else {
         // when you render with your own custom rendering it clobbers the opengl global state or at least would use the program and then set the program to be empty
         // either way simp internally keeps track of the last shader it used and it would be the same as last draw, it doesn't have to re-bind the shader
@@ -887,8 +888,6 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
         render_menus(*wp3.wp);
     }
 
-
-    // swap_buffers(windowed_program_3d.window, windowed_program_3d.vsync);
     Simp.swap_buffers(wp3.window, false);
 }
 
@@ -912,10 +911,13 @@ hide_cursor :: inline () {
 
 
 // performance graph stuff
-
+// this is now encompassing the frame time graph and the per-frame break down
 Performance_Graph :: struct {
     graph_min_ms: float = 4.0;
     graph_max_ms: float = 25.0;
+
+    bar_graph_min_ms: float = 0.0;
+    bar_graph_max_ms: float = 10.0;
 
     GRAPH_STEP_MS :: 0.5;     // additive step for min/max adjustment
     GRAPH_MS_FLOOR :: 0.0;    // absolute minimum for min_ms
@@ -941,24 +943,44 @@ render_performance_graph :: (using wp3: *Windowed_Program_3D) {
 }
 
 update_graph_visual :: (using pg: *Performance_Graph) {
-    // upper bound controls: up/down arrow keys
-    if is_key_just_pressed(.ARROW_UP) {
-        graph_max_ms -= GRAPH_STEP_MS;
-        if graph_max_ms < graph_min_ms + GRAPH_MIN_RANGE  graph_max_ms = graph_min_ms + GRAPH_MIN_RANGE;
-    }
-    if is_key_just_pressed(.ARROW_DOWN) {
-        graph_max_ms += GRAPH_STEP_MS;
-        if graph_max_ms > GRAPH_MS_CEILING  graph_max_ms = GRAPH_MS_CEILING;
-    }
+    shift_down := is_key_down(Input.Key_Code.SHIFT);
 
-    // lower bound controls: left/right arrow keys
-    if is_key_just_pressed(.ARROW_RIGHT) {
-        graph_min_ms += GRAPH_STEP_MS;
-        if graph_min_ms > graph_max_ms - GRAPH_MIN_RANGE  graph_min_ms = graph_max_ms - GRAPH_MIN_RANGE;
-    }
-    if is_key_just_pressed(.ARROW_LEFT) {
-        graph_min_ms -= GRAPH_STEP_MS;
-        if graph_min_ms < GRAPH_MS_FLOOR  graph_min_ms = GRAPH_MS_FLOOR;
+    if shift_down {
+        // bar graph: shift + arrow keys
+        if is_key_just_pressed(.ARROW_UP) {
+            bar_graph_max_ms -= GRAPH_STEP_MS;
+            if bar_graph_max_ms < bar_graph_min_ms + GRAPH_MIN_RANGE  bar_graph_max_ms = bar_graph_min_ms + GRAPH_MIN_RANGE;
+        }
+        if is_key_just_pressed(.ARROW_DOWN) {
+            bar_graph_max_ms += GRAPH_STEP_MS;
+            if bar_graph_max_ms > GRAPH_MS_CEILING  bar_graph_max_ms = GRAPH_MS_CEILING;
+        }
+        if is_key_just_pressed(.ARROW_RIGHT) {
+            bar_graph_min_ms += GRAPH_STEP_MS;
+            if bar_graph_min_ms > bar_graph_max_ms - GRAPH_MIN_RANGE  bar_graph_min_ms = bar_graph_max_ms - GRAPH_MIN_RANGE;
+        }
+        if is_key_just_pressed(.ARROW_LEFT) {
+            bar_graph_min_ms -= GRAPH_STEP_MS;
+            if bar_graph_min_ms < GRAPH_MS_FLOOR  bar_graph_min_ms = GRAPH_MS_FLOOR;
+        }
+    } else {
+        // performance graph: arrow keys
+        if is_key_just_pressed(.ARROW_UP) {
+            graph_max_ms -= GRAPH_STEP_MS;
+            if graph_max_ms < graph_min_ms + GRAPH_MIN_RANGE  graph_max_ms = graph_min_ms + GRAPH_MIN_RANGE;
+        }
+        if is_key_just_pressed(.ARROW_DOWN) {
+            graph_max_ms += GRAPH_STEP_MS;
+            if graph_max_ms > GRAPH_MS_CEILING  graph_max_ms = GRAPH_MS_CEILING;
+        }
+        if is_key_just_pressed(.ARROW_RIGHT) {
+            graph_min_ms += GRAPH_STEP_MS;
+            if graph_min_ms > graph_max_ms - GRAPH_MIN_RANGE  graph_min_ms = graph_max_ms - GRAPH_MIN_RANGE;
+        }
+        if is_key_just_pressed(.ARROW_LEFT) {
+            graph_min_ms -= GRAPH_STEP_MS;
+            if graph_min_ms < GRAPH_MS_FLOOR  graph_min_ms = GRAPH_MS_FLOOR;
+        }
     }
 }
 
@@ -1071,6 +1093,138 @@ create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Ve
     return itpc;
 }
 
+// bar graph for per-tick breakdown
+
+Section_Color_Entry :: struct {
+    name: string;
+    color: Vector3;
+}
+
+// module-level state for tracking seen section names
+seen_section_colors: [MAX_SECTIONS] Section_Color_Entry;
+seen_section_color_count: int = 0;
+
+hash_section_name_to_color :: (name: string) -> Vector3 {
+    for i: 0..seen_section_color_count-1 {
+        if seen_section_colors[i].name == name return seen_section_colors[i].color;
+    }
+    
+    // hash the name
+    h: u32 = 5381;
+    for i: 0..name.count-1 {
+        h = ((h << 5) + h) + cast(u32) name[i];
+    }
+    
+    // generate rgb channels using different prime multipliers keep values in a visible range [0.3, 0.9] so they're not too dark or washed out
+    r_hash := cast(float)((h * 2654435761) % 1000) / 1000.0;
+    g_hash := cast(float)((h * 2246822519) % 1000) / 1000.0;
+    b_hash := cast(float)((h * 3266489917) % 1000) / 1000.0;
+    
+    color := Vector3.{
+        0.3 + r_hash * 0.6,
+        0.3 + g_hash * 0.6,
+        0.3 + b_hash * 0.6
+    };
+    
+    if seen_section_color_count < MAX_SECTIONS {
+        seen_section_colors[seen_section_color_count] = .{name, color};
+        seen_section_color_count += 1;
+        print("[section_bar_graph] New section '%' -> color (%, %, %)\n",
+            name,
+            FormatFloat.{value=color.x, trailing_width=2, zero_removal=.NO},
+            FormatFloat.{value=color.y, trailing_width=2, zero_removal=.NO},
+            FormatFloat.{value=color.z, trailing_width=2, zero_removal=.NO});
+    }
+    
+    return color;
+}
+
+create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Colors {
+    itpc: Indexed_Triangle_Positions_Colors;
+    
+    range_ms := max_ms - min_ms;
+    if range_ms <= 0 range_ms = 1.0;
+    
+    // background quad
+    merge(*itpc, create_itpc_with_color(
+        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
+        .{0.1, 0.1, 0.1}));
+    
+    // 1ms tick lines
+    line_half_height := graph_size.y * 0.005;
+    tick_ms := cast(float)(cast(int) min_ms + 1);
+    while tick_ms < max_ms {
+        if tick_ms != target_ms {
+            y_norm := (tick_ms - min_ms) / range_ms;
+            if y_norm >= 0.0 && y_norm <= 1.0 {
+                y := graph_origin.y + y_norm * graph_size.y;
+                merge(*itpc, create_itpc_with_color(
+                    create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, 0.01),
+                    .{0.35, 0.35, 0.35}));
+            }
+        }
+        tick_ms += 1.0;
+    }
+    
+    // target line
+    target_y_norm := (target_ms - min_ms) / range_ms;
+    if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
+        target_y := graph_origin.y + target_y_norm * graph_size.y;
+        line_half_height_target := graph_size.y * 0.01;
+        merge(*itpc, create_itpc_with_color(
+            create_quad(graph_origin.x, target_y - line_half_height_target, graph_origin.x + graph_size.x, target_y + line_half_height_target, -0.02),
+            .{1.0, 0.0, 0.0}));
+    }
+    
+    // get the most recent completed tick
+    root := get_latest_completed_section(st);
+    if root == null return itpc;
+    if root.child_count == 0 return itpc;
+    
+    child_count := cast(int) root.child_count;
+    
+    // layout: divide horizontal space evenly among children with small gaps
+    gap_fraction := 0.1;  // 10% of each bar slot is gap
+    bar_slot_width := graph_size.x / cast(float) child_count;
+    gap_width := bar_slot_width * gap_fraction;
+    bar_width := bar_slot_width - gap_width;
+    
+    for i: 0..child_count-1 {
+        child := root.children[i];
+        if child == null continue;
+        if !child.completed continue;
+        
+        child_ms := child.elapsed_seconds * 1000.0;
+        bar_height_norm := clamp((child_ms - min_ms) / range_ms, 0.0, 1.0);
+        
+        bar_x0 := graph_origin.x + cast(float) i * bar_slot_width + gap_width * 0.5;
+        bar_x1 := bar_x0 + bar_width;
+        bar_y0 := graph_origin.y;
+        bar_y1 := graph_origin.y + bar_height_norm * graph_size.y;
+        
+        color := hash_section_name_to_color(child.name);
+        
+        merge(*itpc, create_itpc_with_color(
+            create_quad(bar_x0, bar_y0, bar_x1, bar_y1, -0.01),
+            color));
+    }
+    
+    return itpc;
+}
+
+render_section_bar_graph :: (using wp3: *Windowed_Program_3D) {
+    push_allocator(temp);
+    
+    bar_renderable := create_section_bar_graph(
+        *section_timer,
+        graph_origin = .{0.95 , -0.95 + 0.2 + 0.02},  // on top of the performance graph (0.02 gap)
+        graph_size = .{0.4, 0.15},
+        min_ms = performance_graph.bar_graph_min_ms,
+        max_ms = performance_graph.bar_graph_max_ms,
+        target_ms = min_frame_time * 1000
+    );
+    immediate_render(*wp3.absolute_position_color_renderer, bar_renderable);
+}
 
 
 
