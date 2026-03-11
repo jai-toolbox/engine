@@ -924,6 +924,9 @@ Performance_Graph :: struct {
 }
 
 // theoretically this doesn't need a wp3 to do stuff.
+// you need to mark these in your main loop
+// start_section(*windowed_program_3d.section_timer, "tick");
+// end_section(*windowed_program_3d.section_timer, "tick");
 render_performance_graph :: (using wp3: *Windowed_Program_3D) {
     push_allocator(temp);
     graph_renderable := create_frame_time_graph_with_background(
