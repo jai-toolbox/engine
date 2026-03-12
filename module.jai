@@ -90,7 +90,9 @@ Windowed_Program :: struct {
 
     fullscreen := false;
 
+    window_has_focus := true;
     cursor_visible := true;
+
 
     right_handed_mouse_position := false;
 
@@ -185,8 +187,25 @@ per_frame_update :: (using wp: *Windowed_Program) {
         if it.type == .QUIT then end_program = true;
         if it.type == {
           case .KEYBOARD;
-          // this is bad. no one wants the program to close if you press escape.
-            // if it.key_pressed && it.key_code == .ESCAPE end_program = true;
+        }
+    }
+
+    // detect focus transitions using the input module's tracked state
+    old_focus := window_has_focus;
+    window_has_focus = Input.input_application_has_focus;
+
+    if old_focus && !window_has_focus {
+        show_cursor(wp);
+
+        if fullscreen {
+            ChangeDisplaySettingsW(null, 0);
+            ShowWindow(window, SW_MINIMIZE);
+        }
+    }
+
+    if !old_focus && window_has_focus {
+        if fullscreen {
+            set_fullscreen(wp, true);
         }
     }
 
@@ -729,23 +748,25 @@ update_listener_orientation :: (position: Vector3, yaw: float) {
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
-    if (camera_look_active && current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
-        hide_cursor(*wp);  // Only calls ShowCursor(0) once
-        // doing this every itertion seems wasteful.
+    want_cursor_captured := camera_look_active
+                         && current_menu == .NONE
+                         && camera_mode != .TWO_DIMENSIONS
+                         && window_has_focus;
+
+    if want_cursor_captured {
+        hide_cursor(*wp);
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
             last_mouse_delta_x = Input.mouse_delta_x;
             last_mouse_delta_y = Input.mouse_delta_y;
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
-            x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position); 
+            x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position);
             if success update_angles(*camera, x, y);
         }
     } else {
         show_cursor(*wp);
     }
-
-    // if camera_mode == .TWO_DIMENSIONS show_cursor();
 
     vx, vy, vw, vh := get_dimensions(window, right_handed_mouse_position);
 
@@ -756,7 +777,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             update_matrices_third_person(*camera, vw, vh);
     }
 
-    if camera_mode != .TWO_DIMENSIONS && camera_look_active { // we're making the choice that if camera look is not active you cannot move.
+    if camera_mode != .TWO_DIMENSIONS && want_cursor_captured {
         if movement_mode == {
             case .GOD;
                 gmi := God_Mode_Input.{
@@ -801,7 +822,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
         mx, my, mouse_success := get_mouse_pointer_position(window, true);
 
         if mouse_success {
-            // Convert mouse pixel position to world coordinates
             mouse_world_x := (cast(float) mx / cast(float) vw - 0.5) * ortho_width + ortho_center.x;
             mouse_world_y := (cast(float) my / cast(float) vh - 0.5) * ortho_height + ortho_center.y;
 
@@ -811,7 +831,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
                     drag_start_mouse = .{mouse_world_x, mouse_world_y};
                     drag_start_center = ortho_center;
                 } else {
-                    // Current mouse in world space using the *original* center (drag_start_center)
                     current_mouse_world_x := (cast(float) mx / cast(float) vw - 0.5) * ortho_width + drag_start_center.x;
                     current_mouse_world_y := (cast(float) my / cast(float) vh - 0.5) * ortho_height + drag_start_center.y;
 
@@ -1134,17 +1153,12 @@ hash_section_name_to_color :: (name: string) -> Vector3 {
     if seen_section_color_count < MAX_SECTIONS {
         seen_section_colors[seen_section_color_count] = .{name, color};
         seen_section_color_count += 1;
-        print("[section_bar_graph] New section '%' -> color (%, %, %)\n",
-            name,
-            FormatFloat.{value=color.x, trailing_width=2, zero_removal=.NO},
-            FormatFloat.{value=color.y, trailing_width=2, zero_removal=.NO},
-            FormatFloat.{value=color.z, trailing_width=2, zero_removal=.NO});
     }
     
     return color;
 }
 
-create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Colors {
+create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67, print_legend: bool = false) -> Indexed_Triangle_Positions_Colors {
     itpc: Indexed_Triangle_Positions_Colors;
     
     range_ms := max_ms - min_ms;
@@ -1193,6 +1207,10 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
     bar_slot_width := graph_size.x / cast(float) child_count;
     gap_width := bar_slot_width * gap_fraction;
     bar_width := bar_slot_width - gap_width;
+
+    if print_legend {
+        print("[section_bar_graph] Legend (left to right):\n");
+    }
     
     for i: 0..child_count-1 {
         child := root.children[i];
@@ -1208,11 +1226,22 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
         bar_y1 := graph_origin.y + bar_height_norm * graph_size.y;
         
         color := hash_section_name_to_color(child.name);
+
+        if print_legend {
+            print("  [%] '%' -> (%, %, %)\n",
+                i,
+                child.name,
+                FormatFloat.{value=color.x, trailing_width=2, zero_removal=.NO},
+                FormatFloat.{value=color.y, trailing_width=2, zero_removal=.NO},
+                FormatFloat.{value=color.z, trailing_width=2, zero_removal=.NO});
+        }
         
         merge(*itpc, create_itpc_with_color(
             create_quad(bar_x0, bar_y0, bar_x1, bar_y1, -0.01),
             color));
     }
+
+    if print_legend print("\n");
     
     return itpc;
 }
@@ -1220,13 +1249,16 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
 render_section_bar_graph :: (using wp3: *Windowed_Program_3D) {
     push_allocator(temp);
     
+    should_print := is_key_just_pressed(xx #char "P");
+
     bar_renderable := create_section_bar_graph(
         *section_timer,
-        graph_origin = .{0.95 , -0.95 + 0.2 + 0.02},  // on top of the performance graph (0.02 gap)
+        graph_origin = .{0.95 , -0.95 + 0.2 + 0.02},
         graph_size = .{0.4, 0.15},
         min_ms = performance_graph.bar_graph_min_ms,
         max_ms = performance_graph.bar_graph_max_ms,
-        target_ms = min_frame_time * 1000
+        target_ms = min_frame_time * 1000,
+        print_legend = should_print
     );
     immediate_render(*wp3.absolute_position_color_renderer, bar_renderable);
 }
