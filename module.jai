@@ -90,6 +90,8 @@ Windowed_Program :: struct {
 
     fullscreen := false;
 
+    cursor_visible := true;
+
     right_handed_mouse_position := false;
 
     current_theme: s32 = xx Default_Themes.Default;
@@ -290,7 +292,7 @@ toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Sav
 
         SetWindowLongW(hwnd, GWL_STYLE,   saved.style    & ~cast(s32)(WS_CAPTION | WS_THICKFRAME));
         SetWindowLongW(hwnd, GWL_EXSTYLE, saved.ex_style & ~cast(s32)(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, width, height, SWP_FRAMECHANGED);
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, width, height, SWP_FRAMECHANGED);
 
         return true, width, height;
     } else {
@@ -475,13 +477,13 @@ render_tick_stats :: (using wp : *Windowed_Program) {
     label(r,sprint("%/%ms", average_fps, average_tick_ms), *label_theme);
 }
 
-toggle_menu :: (using wp : *Windowed_Program) {
+toggle_menu :: (using wp: *Windowed_Program) {
     if (current_menu == .NONE) {
         current_menu = .MAIN;
-        show_cursor();
+        show_cursor(wp);
     } else {
         current_menu = .NONE;
-        hide_cursor();
+        hide_cursor(wp);
     }
 }
 
@@ -728,8 +730,8 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
     if (camera_look_active && current_menu == .NONE && camera_mode != .TWO_DIMENSIONS) {
+        hide_cursor(*wp);  // Only calls ShowCursor(0) once
         // doing this every itertion seems wasteful.
-        hide_cursor();
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
             last_mouse_delta_x = Input.mouse_delta_x;
@@ -740,7 +742,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             if success update_angles(*camera, x, y);
         }
     } else {
-        show_cursor();
+        show_cursor(*wp);
     }
 
     // if camera_mode == .TWO_DIMENSIONS show_cursor();
@@ -892,22 +894,25 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
     Simp.swap_buffers(wp3.window, false);
 }
 
-show_cursor :: inline () {
-	#if OS == .WINDOWS {
-		win32 :: #import "Windows";
-		win32.ShowCursor (1);
-	} else {
-		// @Todo!
-	}
+
+show_cursor :: (using wp: *Windowed_Program) {
+    if !cursor_visible {
+        cursor_visible = true;
+        #if OS == .WINDOWS {
+            win32 :: #import "Windows";
+            win32.ShowCursor(1);
+        }
+    }
 }
 
-hide_cursor :: inline () {
-	#if OS == .WINDOWS {
-		win32 :: #import "Windows";
-		win32.ShowCursor (0);
-	} else {
-		// @Todo!
-	}
+hide_cursor :: (using wp: *Windowed_Program) {
+    if cursor_visible {
+        cursor_visible = false;
+        #if OS == .WINDOWS {
+            win32 :: #import "Windows";
+            win32.ShowCursor(0);
+        }
+    }
 }
 
 
