@@ -54,6 +54,8 @@ Looping_Program :: struct {
 
     current_time_sec : float = 0;
 
+    section_timer : Section_Timer; // this is here so you don't have to make your own.
+
     current_frame_start : Apollo_Time;
     delta_time :float; 
 
@@ -61,6 +63,28 @@ Looping_Program :: struct {
 
 }
 
+Windowed_Program_Base :: struct {
+    using # as lp : Looping_Program;
+
+    window : Window_Type;
+    saved_window_info : Saved_Window_Info;
+
+    window_name : string = "";
+
+    window_width : s32 = 1280;
+    window_height : s32 = 720;
+
+    vsync := false;
+    fullscreen := false;
+    window_has_focus := true;
+
+    right_handed_mouse_position := false;
+
+    current_theme: s32 = xx Default_Themes.Default;
+    my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
+
+    configuration: Configuration;
+}
 
 /*
 
@@ -73,34 +97,10 @@ In the future it might be good to have one that doesn't rely on GetRect but for 
 
 */
 Windowed_Program :: struct {
-
-    using # as lp : Looping_Program;
-
-    window : Window_Type;
-    saved_window_info : Saved_Window_Info;
-
-    window_name : string = "";
-
-    window_width : s32 = 1280;
-    window_height : s32 = 720;
+    using #as base : Windowed_Program_Base;
 
     current_menu := Current_Menu.MAIN;
-
-    vsync := false;
-
-    fullscreen := false;
-
-    window_has_focus := true;
     cursor_visible := true;
-
-
-    right_handed_mouse_position := false;
-
-    current_theme: s32 = xx Default_Themes.Default;
-    my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
-
-
-    configuration: Configuration;
 }
 
 set_max_fps :: (using lp: *Looping_Program, new_max_fps : u32) {
@@ -112,6 +112,28 @@ init :: (using lp: *Looping_Program) {
     min_frame_time = 1.0 / max_fps;
     // we're just setting it to this so the first iteration has a value.
     delta_time = min_frame_time;
+}
+
+init :: (using wpb : *Windowed_Program_Base) {
+    init(*lp);
+    window = create_window(window_width, window_height, window_name);
+    Simp.set_render_target(window);
+    ui_init();
+    proc := default_theme_procs[current_theme];
+    my_theme = proc();
+    set_default_theme(my_theme); 
+    set_vsync(vsync);
+
+    // NOTE: if you try and do this before the windows opens, it messes up and only plays sounds when the window is hidden
+    // this probably occurs because the sound player has a default of turning off the audio when you alt-tab, and that logic gets
+    // accidentally inverted.
+    if !Sound.sound_player_init(.{}) {
+        print("Failed to initialize sound player!\n");
+        // return;
+    }
+
+    configuration.config_path = "data/engine.cfg";
+    init(*configuration);
 }
 
 init :: (using wp: *Windowed_Program) {
@@ -632,7 +654,6 @@ Windowed_Program_3D :: struct {
     drag_start_mouse : Vector2;
     drag_start_center : Vector2;
 
-    section_timer : Section_Timer; // this is here so you don't have to make your own.
     performance_graph: Performance_Graph;
 
 }
@@ -713,7 +734,7 @@ render_iteration :: (using wp3 : *Windowed_Program_3D) {
 }
 
 
-keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
+keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program_Base) {
     #if OS == .WINDOWS {
         // so that the cursor doesn't fall off the screen.
         x, y, w, h := get_dimensions(window, right_handed_mouse_position);
@@ -1263,7 +1284,19 @@ render_section_bar_graph :: (using wp3: *Windowed_Program_3D) {
     immediate_render(*wp3.absolute_position_color_renderer, bar_renderable);
 }
 
+// network section
 
+#import "tbx/network";
+
+#import "tbx/serialize";
+
+packet_create :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
+    size_when_serialized := size_when_serialized_with_type_first(t);
+    memory : *void = temporary_alloc(size_when_serialized);
+    serialize_with_type_first(memory, t);
+    packet := packet_create(memory, size_when_serialized, packet_flags);
+    return packet;
+}
 
 /*
 
