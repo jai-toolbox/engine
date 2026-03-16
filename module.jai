@@ -96,6 +96,8 @@ and instead you can just focus on making the program happen instead of the boile
 In the future it might be good to have one that doesn't rely on GetRect but for now it seems totally fine.
 
 */
+
+// this is more like a windowed program with a menu to it. and we want one that doesn't have it's own menu so that we can do our own menu, which is windowed program base. But maybe that should be called windowed program and then should be called Windowed_Menu_Program or something yeah I like that more, but alas this is where we are now.
 Windowed_Program :: struct {
     using #as base : Windowed_Program_Base;
 
@@ -249,7 +251,7 @@ per_frame_update :: (using wp: *Windowed_Program) {
     ui_per_frame_update(window, width, height, current_time);
 }
 
-set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
+set_fullscreen :: (using wp: *Windowed_Program_Base, enabled : bool) {
 
     if !fullscreen && fullscreen == enabled return;
 
