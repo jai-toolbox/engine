@@ -10,9 +10,9 @@
 Sound :: #import "Sound_Player";
 Simp :: #import "Simp";
 Input :: #import "Input";
+GetRect :: #import "GetRect";
 #scope_export
 
-#import "GetRect";
 
 #import "tbx/opengl";
 #import "tbx/camera";
@@ -63,29 +63,6 @@ Looping_Program :: struct {
 
 }
 
-Windowed_Program_Base :: struct {
-    using # as lp : Looping_Program;
-
-    window : Window_Type;
-    saved_window_info : Saved_Window_Info;
-
-    window_name : string = "";
-
-    window_width : s32 = 1280;
-    window_height : s32 = 720;
-
-    vsync := false;
-    fullscreen := false;
-    window_has_focus := true;
-
-    right_handed_mouse_position := false;
-
-    current_theme: s32 = xx Default_Themes.Default;
-    my_theme: Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
-
-    configuration: Configuration;
-}
-
 /*
 
 A windowed program is a program that has a window and assume that you're going to use GetRect and Simp to do ui stuff. You can still bring your own rendering.
@@ -96,14 +73,44 @@ and instead you can just focus on making the program happen instead of the boile
 In the future it might be good to have one that doesn't rely on GetRect but for now it seems totally fine.
 
 */
-
-// this is more like a windowed program with a menu to it. and we want one that doesn't have it's own menu so that we can do our own menu, which is windowed program base. But maybe that should be called windowed program and then should be called Windowed_Menu_Program or something yeah I like that more, but alas this is where we are now.
 Windowed_Program :: struct {
-    using #as base : Windowed_Program_Base;
+    using # as lp : Looping_Program;
+
+    window : Window_Type;
+    saved_window_info : Saved_Window_Info;
+
+    // we package this renderer into it because we provide some basic profiling visualizations
+    // that you would want when you're starting out, and even later on.
+    absolute_position_color_renderer : Absolute_Position_Color_Renderer;
+    // a performance graph is a very good tool that windowed program would benefit from.
+    performance_graph: Performance_Graph;
+
+    window_name : string = "";
+
+    window_width : s32 = 1280;
+    window_height : s32 = 720;
+
+    vsync := false;
+    fullscreen := false;
+    window_has_focus := true;
+
+    cursor_visible := true;
+
+    right_handed_mouse_position := false;
+
+    current_theme: s32 = xx GetRect.Default_Themes.Default;
+    my_theme: GetRect.Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
+
+    configuration: Configuration;
+}
+
+
+Windowed_Menu_Program :: struct {
+    using #as base : Windowed_Program;
 
     current_menu := Current_Menu.MAIN;
-    cursor_visible := true;
 }
+
 
 set_max_fps :: (using lp: *Looping_Program, new_max_fps : u32) {
     max_fps = new_max_fps;
@@ -116,36 +123,19 @@ init :: (using lp: *Looping_Program) {
     delta_time = min_frame_time;
 }
 
-init :: (using wpb : *Windowed_Program_Base) {
-    init(*lp);
-    window = create_window(window_width, window_height, window_name);
-    Simp.set_render_target(window);
-    ui_init();
-    proc := default_theme_procs[current_theme];
-    my_theme = proc();
-    set_default_theme(my_theme); 
-    set_vsync(vsync);
-
-    // NOTE: if you try and do this before the windows opens, it messes up and only plays sounds when the window is hidden
-    // this probably occurs because the sound player has a default of turning off the audio when you alt-tab, and that logic gets
-    // accidentally inverted.
-    if !Sound.sound_player_init(.{}) {
-        print("Failed to initialize sound player!\n");
-        // return;
-    }
-
-    configuration.config_path = "data/engine.cfg";
-    init(*configuration);
-}
-
 init :: (using wp: *Windowed_Program) {
     init(*lp);
     window = create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
-    ui_init();
-    proc := default_theme_procs[current_theme];
+
+    init(*absolute_position_color_renderer);
+    
+    // this could be it's own function that configures a thing that wants to do rendering with get rect if that makes sense.
+    GetRect.ui_init();
+    proc := GetRect.default_theme_procs[current_theme];
     my_theme = proc();
-    set_default_theme(my_theme); 
+    GetRect.set_default_theme(my_theme); 
+
     set_vsync(vsync);
 
     // NOTE: if you try and do this before the windows opens, it messes up and only plays sounds when the window is hidden
@@ -199,14 +189,18 @@ per_frame_update :: (using lp: *Looping_Program) {
     mark_cycle(*tick_timer);
 }
 
-
+set_aspect_ratio_uniform :: (using wp : *Windowed_Program) {
+    set_active_program(absolute_position_color_renderer);
+    set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
+    clear_active_program();
+}
 
 per_frame_update :: (using wp: *Windowed_Program) {
     per_frame_update(*lp);
 
     Input.update_window_events();
     for Input.events_this_frame {
-        getrect_handle_event(it);
+        GetRect.getrect_handle_event(it);
 
         if it.type == .QUIT then end_program = true;
         if it.type == {
@@ -234,7 +228,7 @@ per_frame_update :: (using wp: *Windowed_Program) {
     }
 
     for Input.get_window_resizes() {
-        Simp.update_window(it.window);  
+        Simp.update_window(it.window);
         if it.window == window {
             resolution_has_changed := (it.width != window_width) || (it.height != window_height);
             if (resolution_has_changed) {
@@ -244,6 +238,8 @@ per_frame_update :: (using wp: *Windowed_Program) {
         }
     }
 
+    set_aspect_ratio_uniform(wp);
+
     apollo_current_time := current_time_consensus();
     current_time := to_float64_seconds(apollo_current_time);
 
@@ -251,10 +247,9 @@ per_frame_update :: (using wp: *Windowed_Program) {
     ui_per_frame_update(window, width, height, current_time);
 }
 
-set_fullscreen :: (using wp: *Windowed_Program_Base, enabled : bool) {
+set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
 
     if !fullscreen && fullscreen == enabled return;
-
 
 	#if OS == .WINDOWS {
         saved_window_info.rect.left = 0;
@@ -359,12 +354,12 @@ disable_fullscreen :: (using wp: *Windowed_Program) {
     set_fullscreen(wp, false);
 }
 
-get_rect_normalized :: (r: Rectangle, screen_width: float, screen_height: float) -> Rect {
+get_rect_normalized :: (r: Rectangle, screen_width: float, screen_height: float) -> GetRect.Rect {
     return get_rect_normalized(r.x, r.y, r.w, r.h, screen_width, screen_height);
 }
 
-get_rect_normalized :: (x: float, y: float, w: float, h: float, screen_width: float, screen_height: float) -> Rect {
-    r: Rect;
+get_rect_normalized :: (x: float, y: float, w: float, h: float, screen_width: float, screen_height: float) -> GetRect.Rect {
+    r: GetRect.Rect;
     
     // convert from [-1, 1] space to [0, screen_size] space
     // the center in screen coordinates:
@@ -386,12 +381,12 @@ get_rect_normalized :: (x: float, y: float, w: float, h: float, screen_width: fl
     return r;
 }
 
-render_main_menu :: (using wp : *Windowed_Program) {
+render_main_menu :: (using wp : *Windowed_Menu_Program) {
     width, height := Simp.get_render_dimensions(window);
     label_theme := my_theme.label_theme;
 
     r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    label(r, window_name, *label_theme);
+    GetRect.label(r, window_name, *label_theme);
 
     // create a button in the top left hand corner.
     k := height * 0.10;
@@ -402,7 +397,7 @@ render_main_menu :: (using wp : *Windowed_Program) {
 
     rectangles := subdivide_rectangle(center_area_rect, 8, .HORIZONTAL);
 
-    rects : [..] Rect;
+    rects : [..] GetRect.Rect;
     defer array_free(rects);
     for rectangles array_add(*rects, get_rect_normalized(it, xx width, xx height));
 
@@ -425,11 +420,11 @@ render_main_menu :: (using wp : *Windowed_Program) {
   if button(r, "exit") end_program = true;
 }
 
-render_graphics_settings :: (using wp : * Windowed_Program) {
+render_graphics_settings :: (using wp : * Windowed_Menu_Program) {
     width, height := Simp.get_render_dimensions(window);
     label_theme := my_theme.label_theme;
     r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    label(r, "Graphics Settings", *label_theme);
+    GetRect.label(r, "Graphics Settings", *label_theme);
 
     // create a button in the top left hand corner.
     k := height * 0.10;
@@ -472,21 +467,21 @@ render_graphics_settings :: (using wp : * Windowed_Program) {
     defer draw_popups();
 }
 
-render_user_settings :: (using wp : *Windowed_Program) {
+render_user_settings :: (using wp : *Windowed_Menu_Program) {
     width, height := Simp.get_render_dimensions(window);
     label_theme := my_theme.label_theme;
     r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    label(r, "User Settings", *label_theme);
+    GetRect.label(r, "User Settings", *label_theme);
 
     r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
     if button(r, "back") current_menu = .MAIN;
 }
 
-render_sound_settings :: (using wp : *Windowed_Program) {
+render_sound_settings :: (using wp : *Windowed_Menu_Program) {
     width, height := Simp.get_render_dimensions(window);
     label_theme := my_theme.label_theme;
     r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    label(r, "Sound Settings", *label_theme);
+    GetRect.label(r, "Sound Settings", *label_theme);
 
     r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
     if button(r, "back") current_menu = .MAIN;
@@ -497,7 +492,7 @@ render_sound_settings :: (using wp : *Windowed_Program) {
     slider(r, *volume, 0, 100, 1, *slider_theme, "volume: ");
 }
 
-render_menus :: (using wp : *Windowed_Program) {
+render_menus :: (using wp : *Windowed_Menu_Program) {
     if current_menu == {
         case .MAIN;
             render_main_menu(wp);
@@ -517,10 +512,10 @@ render_tick_stats :: (using wp : *Windowed_Program) {
     label_theme := my_theme.label_theme;
     r := get_rect_normalized(create_rectangle(1, 1, 0.25, 0.1, .TOP_RIGHT), xx window_width, xx window_height);
 
-    label(r,sprint("%/%ms", average_fps, average_tick_ms), *label_theme);
+    GetRect.label(r,sprint("%/%ms", average_fps, average_tick_ms), *label_theme);
 }
 
-toggle_menu :: (using wp: *Windowed_Program) {
+toggle_menu :: (using wp: *Windowed_Menu_Program) {
     if (current_menu == .NONE) {
         current_menu = .MAIN;
         show_cursor(wp);
@@ -593,7 +588,7 @@ NEGATIVE_Z_GL_ORIENTATION :: #run Orientation.{-Z3, X3, Y3};
 
 Windowed_Program_3D :: struct {
 
-    using #as wp : Windowed_Program;
+    using #as wp : Windowed_Menu_Program;
 
     orientation := STANDARD_ORIENTATION;
 
@@ -627,7 +622,6 @@ Windowed_Program_3D :: struct {
     */
  
     camera_per_object_transform_color_renderer : Camera_Per_Object_Transform_Color_Renderer;
-    absolute_position_color_renderer : Absolute_Position_Color_Renderer;
 
     camera : Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
@@ -656,7 +650,6 @@ Windowed_Program_3D :: struct {
     drag_start_mouse : Vector2;
     drag_start_center : Vector2;
 
-    performance_graph: Performance_Graph;
 
 }
 
@@ -713,8 +706,8 @@ render_movement_stats :: (using wp3 : *Windowed_Program_3D) {
     r_pos := get_rect_normalized(create_rectangle(-1, 1, rect_width, rect_height, .TOP_LEFT), xx window_width, xx window_height);
     r_vel := get_rect_normalized(create_rectangle(-1, 1 - rect_height, rect_width, rect_height, .TOP_LEFT), xx window_width, xx window_height);
 
-    label(r_pos, format_vec3(camera.position), *label_theme);
-    label(r_vel, format_vec3(camera_velocity), *label_theme);
+    GetRect.label(r_pos, format_vec3(camera.position), *label_theme);
+    GetRect.label(r_vel, format_vec3(camera_velocity), *label_theme);
 }
 
 render_camera_stats :: (using wp3 : *Windowed_Program_3D) {
@@ -723,7 +716,7 @@ render_camera_stats :: (using wp3 : *Windowed_Program_3D) {
     rect_width := 0.4;
     r := get_rect_normalized(create_rectangle(-1, -1, rect_width, rect_height, .BOTTOM_LEFT), xx window_width, xx window_height);
 
-    label(r, format_vec3(get_forward(*camera)), *label_theme);
+    GetRect.label(r, format_vec3(get_forward(*camera)), *label_theme);
 }
 
 render_iteration :: (using wp3 : *Windowed_Program_3D) {
@@ -732,11 +725,11 @@ render_iteration :: (using wp3 : *Windowed_Program_3D) {
     rect_width := 0.4;
     r := get_rect_normalized(create_rectangle(1, -1, rect_width, rect_height, .BOTTOM_RIGHT), xx window_width, xx window_height);
 
-    label(r, tprint("%", iteration), *label_theme);
+    GetRect.label(r, tprint("%", iteration), *label_theme);
 }
 
 
-keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program_Base) {
+keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
     #if OS == .WINDOWS {
         // so that the cursor doesn't fall off the screen.
         x, y, w, h := get_dimensions(window, right_handed_mouse_position);
@@ -867,7 +860,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     }
 
     glUseProgram(absolute_position_color_renderer.shader_program_gl_handle);
-    set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
+    // set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
 
     glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
@@ -976,7 +969,7 @@ Performance_Graph :: struct {
 // you need to mark these in your main loop
 // start_section(*windowed_program_3d.section_timer, "tick");
 // end_section(*windowed_program_3d.section_timer, "tick");
-render_performance_graph :: (using wp3: *Windowed_Program_3D) {
+render_performance_graph :: (using wp: *Windowed_Program) {
     push_allocator(temp);
     graph_renderable := create_frame_time_graph_with_background(
         *section_timer,
@@ -986,7 +979,7 @@ render_performance_graph :: (using wp3: *Windowed_Program_3D) {
         max_ms = performance_graph.graph_max_ms,
         target_ms = min_frame_time * 1000
     );
-    immediate_render(*wp3.absolute_position_color_renderer, graph_renderable);
+    immediate_render(*wp.absolute_position_color_renderer, graph_renderable);
 }
 
 update_graph_visual :: (using pg: *Performance_Graph) {
@@ -1269,7 +1262,7 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
     return itpc;
 }
 
-render_section_bar_graph :: (using wp3: *Windowed_Program_3D) {
+render_section_bar_graph :: (using wp: *Windowed_Program) {
     push_allocator(temp);
     
     should_print := is_key_just_pressed(xx #char "P");
@@ -1283,7 +1276,7 @@ render_section_bar_graph :: (using wp3: *Windowed_Program_3D) {
         target_ms = min_frame_time * 1000,
         print_legend = should_print
     );
-    immediate_render(*wp3.absolute_position_color_renderer, bar_renderable);
+    immediate_render(*wp.absolute_position_color_renderer, bar_renderable);
 }
 
 // network section
