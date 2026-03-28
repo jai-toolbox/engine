@@ -7,7 +7,7 @@
 #import "GL";
 
 #scope_file
-Sound :: #import "Sound_Player";
+Sound_Player :: #import "Sound_Player";
 Simp :: #import "Simp";
 Input :: #import "Input";
 GetRect :: #import "GetRect";
@@ -141,7 +141,7 @@ init :: (using wp: *Windowed_Program) {
     // NOTE: if you try and do this before the windows opens, it messes up and only plays sounds when the window is hidden
     // this probably occurs because the sound player has a default of turning off the audio when you alt-tab, and that logic gets
     // accidentally inverted.
-    if !Sound.sound_player_init(.{}) {
+    if !Sound_Player.sound_player_init(.{}) {
         print("Failed to initialize sound player!\n");
         // return;
     }
@@ -151,7 +151,7 @@ init :: (using wp: *Windowed_Program) {
 }
 
 deinit :: (using wp: *Windowed_Program) {
-    Sound.sound_player_shutdown();
+    Sound_Player.sound_player_shutdown();
     deinit(*configuration);
 }
 
@@ -189,9 +189,13 @@ per_frame_update :: (using lp: *Looping_Program) {
     mark_cycle(*tick_timer);
 }
 
+get_window_dimensions_vector :: (using wp : *Windowed_Program) -> Vector2 {
+    return .{xx window_width, xx window_height};
+}
+
 set_aspect_ratio_uniform :: (using wp : *Windowed_Program) {
     set_active_program(absolute_position_color_renderer);
-    set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
+    set_aspect_ratio_uniform(*absolute_position_color_renderer, get_window_dimensions_vector(wp));
     clear_active_program();
 }
 
@@ -735,7 +739,7 @@ keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
         x, y, w, h := get_dimensions(window, right_handed_mouse_position);
         set_mouse_pointer_position (w / 2, h / 2);
     } else {
-        // don't yet have ability to hide cursor properly on linux
+        // don't know how to do this on linux yet.
     }
 }
 
@@ -758,7 +762,7 @@ update_listener_orientation :: (position: Vector3, yaw: float) {
 
     listener_orientation := yaw_quat * correction_quat;
 
-    Sound.update_listener(position, listener_orientation);
+    Sound_Player.update_listener(position, listener_orientation);
 }
 
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
@@ -813,7 +817,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     if movement_mode != .MANUAL camera.position += camera_velocity * delta_time;
 
     update_listener_orientation(camera.position, camera.yaw);
-    Sound.update(delta_time);
+    Sound_Player.update(delta_time);
 
     // handle 2d drag and scroll
     if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {
@@ -1292,6 +1296,213 @@ packet_create :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
     packet := packet_create(memory, size_when_serialized, packet_flags);
     return packet;
 }
+
+
+
+#import "tbx/circular_array";
+
+// creates a filled area graph from a rolling history of float values.
+// reference_lines is an optional array of y-values (in data space) where horizontal lines should be drawn.
+create_time_series_graph :: (
+    history: *Circular_Array(float, $N),
+    graph_origin: Vector2,
+    graph_size: Vector2,
+    min_val: float,
+    max_val: float,
+    color: Vector3 = .{0.2, 0.8, 0.3},
+    reference_lines: [] float = .[]
+) -> Indexed_Triangle_Positions_Colors {
+
+    itpc: Indexed_Triangle_Positions_Colors;
+
+    range_val := max_val - min_val;
+    if range_val <= 0 range_val = 1.0;
+
+    // background (furthest back)
+    merge(*itpc, create_itpc_with_color(
+        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
+        .{0.1, 0.1, 0.1}));
+
+    // graph data (middle layer)
+    count := history.count;
+    if count >= 2 {
+        points: [N] Vector2;
+        point_count := 0;
+
+        idx := history.tail;
+        for i: 0..count-1 {
+            x_norm := cast(float) i / cast(float) max(count - 1, 1);
+            val := history.data[idx];
+            y_norm := clamp((val - min_val) / range_val, 0.0, 1.0);
+
+            points[point_count] = .{x_norm, y_norm};
+            point_count += 1;
+
+            idx = (idx + 1) % N;
+        }
+
+        points_slice: [] Vector2;
+        points_slice.data = points.data;
+        points_slice.count = point_count;
+
+        graph_itp := create_graph(points_slice, graph_origin, graph_size);
+        graph_itpc := create_itpc_with_color(graph_itp, color);
+        merge(*itpc, graph_itpc);
+    }
+
+    // reference lines (in front of graph data)
+    line_half_height := graph_size.y * 0.008;
+    for ref_idx: 0..reference_lines.count-1 {
+        ref_val := reference_lines[ref_idx];
+        y_norm := (ref_val - min_val) / range_val;
+        if y_norm >= 0.0 && y_norm <= 1.0 {
+            y := graph_origin.y + y_norm * graph_size.y;
+            merge(*itpc, create_itpc_with_color(
+                create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, -0.01),
+                .{1.0, 1.0, 1.0}));
+        }
+    }
+
+    return itpc;
+}
+
+// renders a horizontal strip of colored quads. each sample in the history maps to a column.
+// color_map_func takes the float value and returns a color for that column.
+// if color_map_func is null, uses a default: 0.0 -> red, 1.0 -> green.
+create_colored_timeline_strip :: (
+    history: *Circular_Array(float, $N),
+    graph_origin: Vector2,
+    graph_size: Vector2,
+    color_map_func: (float) -> Vector3 = null
+) -> Indexed_Triangle_Positions_Colors {
+
+    itpc: Indexed_Triangle_Positions_Colors;
+
+    // background
+    merge(*itpc, create_itpc_with_color(
+        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
+        .{0.1, 0.1, 0.1}));
+
+    count := history.count;
+    if count == 0 return itpc;
+
+    bar_width := graph_size.x / cast(float) count;
+
+    idx := history.tail;
+    for i: 0..count-1 {
+        val := history.data[idx];
+
+        color: Vector3;
+        if color_map_func != null {
+            color = color_map_func(val);
+        } else {
+            color = default_binary_color_map(val);
+        }
+
+        x0 := graph_origin.x + cast(float) i * bar_width;
+        x1 := x0 + bar_width;
+
+        merge(*itpc, create_itpc_with_color(
+            create_quad(x0, graph_origin.y, x1, graph_origin.y + graph_size.y, -0.01),
+            color));
+
+        idx = (idx + 1) % N;
+    }
+
+    return itpc;
+}
+
+default_binary_color_map :: (val: float) -> Vector3 {
+    if val > 0.5 return .{0.2, 0.8, 0.2}; // green
+    return .{0.8, 0.2, 0.2}; // red
+}
+
+// i'm just putting this here which is wrong.
+#import "tbx/networked_interpolator";
+
+// renders the four npsq monitoring visualizations stacked vertically.
+// call this from your main loop after per_frame_update, before swap_buffers.
+render_npsq_monitor_graphs :: (
+    renderer: *Absolute_Position_Color_Renderer,
+    npsq: *Networked_Periodic_Signal_Quantizer($T, $MONITOR),
+    origin_x: float = -0.95,
+    origin_y: float = -0.95,
+    graph_width: float = 0.4,
+    graph_height: float = 0.1,
+    gap: float = 0.02
+) {
+    #if !MONITOR {
+        return;
+    } else {
+        push_allocator(temp);
+
+        y := origin_y;
+
+        // buffer occupancy over time
+        {
+            ref_lines: [2] float;
+            ref_lines[0] = cast(float) npsq.target_num_states;
+            ref_lines[1] = cast(float) npsq.max_num_states;
+
+            ref_slice: [] float;
+            ref_slice.data = ref_lines.data;
+            ref_slice.count = 2;
+
+            graph := create_time_series_graph(
+                *npsq.buffer_occupancy_history,
+                .{origin_x, y},
+                .{graph_width, graph_height},
+                min_val = 0.0,
+                max_val = cast(float) npsq.max_num_states + 1.0,
+                color = .{0.3, 0.6, 0.9},
+                reference_lines = ref_slice
+            );
+            immediate_render(renderer, graph);
+            y += graph_height + gap;
+        }
+
+        // mode indicator (green = normal, red = repopulate)
+        {
+            graph := create_colored_timeline_strip(
+                *npsq.mode_history,
+                .{origin_x, y},
+                .{graph_width, graph_height}
+            );
+            immediate_render(renderer, graph);
+            y += graph_height + gap;
+        }
+
+        // emit result (green = had value, red = no value)
+        {
+            graph := create_colored_timeline_strip(
+                *npsq.emit_result_history,
+                .{origin_x, y},
+                .{graph_width, graph_height}
+            );
+            immediate_render(renderer, graph);
+            y += graph_height + gap;
+        }
+
+        // removal count per push
+        {
+            graph := create_time_series_graph(
+                *npsq.removal_count_history,
+                .{origin_x, y},
+                .{graph_width, graph_height},
+                min_val = 0.0,
+                max_val = cast(float) npsq.max_num_states,
+                color = .{0.9, 0.6, 0.2}
+            );
+            immediate_render(renderer, graph);
+        }
+    }
+}
+
+
+
+
+
+
 
 /*
 
