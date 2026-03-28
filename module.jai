@@ -260,12 +260,14 @@ set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
         saved_window_info.rect.top = 0;
         saved_window_info.rect.bottom = window_width;
         saved_window_info.rect.right = window_height;
+
+        // todo need to do somethign with these values right?
+        success, new_width, new_height := toggle_fullscreen_exclusive(window, enabled, *saved_window_info);
+        fullscreen = enabled;
+        set_vsync(vsync);
+
     }
 
-    // todo need to do somethign with these values right?
-    success, new_width, new_height := toggle_fullscreen_exclusive(window, enabled, *saved_window_info);
-    fullscreen = enabled;
-    set_vsync(vsync);
 }
 
 DEVMODEW :: struct {
@@ -299,6 +301,9 @@ DM_PELSHEIGHT : u32 : 0x00100000;
 CDS_FULLSCREEN : u32 : 0x00000004;
 DISP_CHANGE_SUCCESSFUL : s32 : 0;
 
+
+
+#if OS == .WINDOWS {
 
 _user32 :: #system_library "user32";
 ChangeDisplaySettingsW :: (lpDevMode: *DEVMODEW, dwflags: u32) -> s32 #foreign _user32;
@@ -348,6 +353,8 @@ toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Sav
 
         return true, saved.rect.right - x, saved.rect.bottom - y;
     }
+}
+
 }
 
 enable_fullscreen :: (using wp: *Windowed_Program) {
