@@ -248,7 +248,7 @@ per_frame_update :: (using wp: *Windowed_Program) {
     current_time := to_float64_seconds(apollo_current_time);
 
     width, height := Simp.get_render_dimensions(window);
-    ui_per_frame_update(window, width, height, current_time);
+    GetRect.ui_per_frame_update(window, width, height, current_time);
 }
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
