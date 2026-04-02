@@ -1,18 +1,18 @@
 
 // usage of this engine is at the bottom of the file
 
-#import "Window_Creation";
 #import "Math";
 #import "Basic";
 #import "GL";
 
 #scope_file
+Window_Creation :: #import "Window_Creation";
 Sound_Player :: #import "Sound_Player";
 Simp :: #import "Simp";
 Input :: #import "Input";
-GetRect :: #import "GetRect";
 #scope_export
 
+#load "sound.jai";
 
 #import "tbx/opengl";
 #import "tbx/camera";
@@ -22,6 +22,7 @@ GetRect :: #import "GetRect";
 #import "tbx/time";
 #import "tbx/math";
 #import "tbx/geometry";
+#import "tbx/ui";
 
 Current_Menu :: enum {
     MAIN;
@@ -31,58 +32,31 @@ Current_Menu :: enum {
     NONE;
 }
 
-/*
-
-In the beginning you want results, in the end all you want is control. - Eskil Steenburg
-
-This "engine" is for when all you want is results, designed modularly enough so that when you want control you can lop off pieces of it incrementally.
-
-There are some things which are genuinely useful all the time such as the looping program so that you don't have to compute a delta time yourself every frame.
-
-*/
-
 Looping_Program :: struct {
     end_program := false;
 
-    // max_fps : u32 = 60;
     max_fps : u32 = 144;
-    // frames must take at least this long, they may be longer, and in that case our fps will be under 60, which is what we want.
-    // if they were any shorter we'd get over 60, which is not what we want because we set our max_fps above.
     min_frame_time :float;
 
     tick_timer : Periodic_Timer;
 
     current_time_sec : float = 0;
 
-    section_timer : Section_Timer; // this is here so you don't have to make your own.
+    section_timer : Section_Timer;
 
     current_frame_start : Apollo_Time;
-    delta_time :float; 
+    delta_time :float;
 
     iteration := 0;
-
 }
 
-/*
-
-A windowed program is a program that has a window and assume that you're going to use GetRect and Simp to do ui stuff. You can still bring your own rendering.
-
-The point of it is that when you make a new program you don't have to remember which per-frame updates you need to call
-and instead you can just focus on making the program happen instead of the boilerplate you would normally write at the start of a new program.
-
-In the future it might be good to have one that doesn't rely on GetRect but for now it seems totally fine.
-
-*/
 Windowed_Program :: struct {
     using # as lp : Looping_Program;
 
-    window : Window_Type;
-    saved_window_info : Saved_Window_Info;
+    window : Window_Creation.Window_Type;
+    saved_window_info : Window_Creation.Saved_Window_Info;
 
-    // we package this renderer into it because we provide some basic profiling visualizations
-    // that you would want when you're starting out, and even later on.
     absolute_position_color_renderer : Absolute_Position_Color_Renderer;
-    // a performance graph is a very good tool that windowed program would benefit from.
     performance_graph: Performance_Graph;
 
     window_name : string = "";
@@ -98,10 +72,23 @@ Windowed_Program :: struct {
 
     right_handed_mouse_position := false;
 
-    current_theme: s32 = xx GetRect.Default_Themes.Default;
-    my_theme: GetRect.Overall_Theme;  // This gets filled out by calling the Theme_Proc for current_theme.
-
     configuration: Configuration;
+
+    // custom UI system replaces GetRect
+    ui_context: UI_Context;
+    ui_font: MSDF_Font;
+    ui_msdf_renderer: Multi_Channel_Signed_Distance_Field_Text_Renderer;
+    ui_rect_renderer: Absolute_Position_Color_Alpha_Renderer;
+    ui_initialized := false;
+
+    sound_catalog : Table(u8, Sound_Player.Sound_Data);
+
+    // mouse/keyboard state gathered per frame for the UI
+    ui_mouse_left_down:  bool;
+    ui_mouse_right_down: bool;
+    ui_scroll_y:         float32;
+    ui_ctrl_held:        bool;
+    ui_shift_held:       bool;
 }
 
 
@@ -109,6 +96,12 @@ Windowed_Menu_Program :: struct {
     using #as base : Windowed_Program;
 
     current_menu := Current_Menu.MAIN;
+
+    // menu state
+    volume: float32 = 50.0;
+    menu_fullscreen_checkbox: bool = false;
+    menu_resolution_selection: s32 = 0;
+    menu_max_fps_float: float32 = 144.0;
 }
 
 
@@ -119,31 +112,29 @@ set_max_fps :: (using lp: *Looping_Program, new_max_fps : u32) {
 
 init :: (using lp: *Looping_Program) {
     min_frame_time = 1.0 / max_fps;
-    // we're just setting it to this so the first iteration has a value.
     delta_time = min_frame_time;
 }
 
 init :: (using wp: *Windowed_Program) {
     init(*lp);
-    window = create_window(window_width, window_height, window_name);
+    window = Window_Creation.create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
 
     init(*absolute_position_color_renderer);
-    
-    // this could be it's own function that configures a thing that wants to do rendering with get rect if that makes sense.
-    GetRect.ui_init();
-    proc := GetRect.default_theme_procs[current_theme];
-    my_theme = proc();
-    GetRect.set_default_theme(my_theme); 
+
+    // initialize custom UI system
+    #import "stb_image";
+    stbi_set_flip_vertically_on_load(1);
+    ui_font = msdf_font_load("data/fonts/pt_serif/atlas.json", "data/fonts/pt_serif/atlas.png");
+    init(*ui_msdf_renderer);
+    init(*ui_rect_renderer);
+    ui_init(*ui_context, *ui_font, *ui_msdf_renderer, *ui_rect_renderer);
+    ui_initialized = true;
 
     set_vsync(vsync);
 
-    // NOTE: if you try and do this before the windows opens, it messes up and only plays sounds when the window is hidden
-    // this probably occurs because the sound player has a default of turning off the audio when you alt-tab, and that logic gets
-    // accidentally inverted.
     if !Sound_Player.sound_player_init(.{}) {
         print("Failed to initialize sound player!\n");
-        // return;
     }
 
     configuration.config_path = "data/engine.cfg";
@@ -153,11 +144,12 @@ init :: (using wp: *Windowed_Program) {
 deinit :: (using wp: *Windowed_Program) {
     Sound_Player.sound_player_shutdown();
     deinit(*configuration);
+    if ui_initialized {
+        ui_destroy(*ui_context);
+        msdf_font_destroy(*ui_font);
+    }
 }
 
-// it's important to note that this can be called on windowed program or windowed program 3d 
-// only because we put the looping program at the very start of both of those structs so 
-// they can prance around as looping programs and when we interpret it as such it's all good. else it would be a memory error
 mark_frame_start :: (using lp: *Looping_Program) {
     current_frame_start = current_time_monotonic();
 }
@@ -176,9 +168,7 @@ sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
 
 
 mark_frame_end :: (using lp: *Looping_Program) {
-
-    reset_temporary_storage(); // this probably shouldn't be here, but I'm sneaking it in for now.
-
+    reset_temporary_storage();
     frame_end := current_time_monotonic();
     delta_time = cast (float) to_float64_seconds(frame_end - current_frame_start);
     current_time_sec += delta_time;
@@ -202,23 +192,58 @@ set_aspect_ratio_uniform :: (using wp : *Windowed_Program) {
 per_frame_update :: (using wp: *Windowed_Program) {
     per_frame_update(*lp);
 
+    // reset per-frame UI input accumulators
+    ui_scroll_y = 0;
+    ui_ctrl_held = false;
+    ui_shift_held = false;
+
     Input.update_window_events();
     for Input.events_this_frame {
-        GetRect.getrect_handle_event(it);
-
         if it.type == .QUIT then end_program = true;
-        if it.type == {
-          case .KEYBOARD;
+
+        // feed keyboard events to custom UI
+        if it.type == .KEYBOARD {
+            if it.key_pressed {
+                if it.key_code == {
+                    case .BACKSPACE;    ui_push_key(.BACKSPACE);
+                    case .DELETE;       ui_push_key(.DELETE);
+                    case .ARROW_LEFT;   ui_push_key(.LEFT);
+                    case .ARROW_RIGHT;  ui_push_key(.RIGHT);
+                    case .HOME;         ui_push_key(.HOME);
+                    case .END;          ui_push_key(.END);
+                    case .ENTER;        ui_push_key(.ENTER);
+                    case .ESCAPE;       ui_push_key(.ESCAPE);
+                    case .TAB;          ui_push_key(.TAB);
+                }
+            }
+            ui_ctrl_held  = it.ctrl_pressed;
+            ui_shift_held = it.shift_pressed;
+        }
+
+        if it.type == .TEXT_INPUT {
+            if it.utf32 >= 32 && it.utf32 < 127 {
+                ui_push_char(cast(u8) it.utf32);
+            }
+        }
+
+        if it.type == .MOUSE_WHEEL {
+            if it.wheel_delta > 0      ui_scroll_y += 1.0;
+            else if it.wheel_delta < 0 ui_scroll_y -= 1.0;
         }
     }
 
-    // detect focus transitions using the input module's tracked state
+    // gather mouse button state
+    ui_mouse_left_down  = (Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT]  & .DOWN) != 0;
+    ui_mouse_right_down = (Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .DOWN) != 0;
+
+    ui_set_modifiers(ui_ctrl_held, ui_shift_held);
+
+    // detect focus transitions
     old_focus := window_has_focus;
     window_has_focus = Input.input_application_has_focus;
 
     if old_focus && !window_has_focus {
         show_cursor(wp);
-
         if fullscreen {
             ChangeDisplaySettingsW(null, 0);
             ShowWindow(window, SW_MINIMIZE);
@@ -243,31 +268,38 @@ per_frame_update :: (using wp: *Windowed_Program) {
     }
 
     set_aspect_ratio_uniform(wp);
+}
 
-    apollo_current_time := current_time_consensus();
-    current_time := to_float64_seconds(apollo_current_time);
+// begin the UI frame - call this after per_frame_update, before any ui_ widget calls
+ui_begin :: (using wp: *Windowed_Program) {
+    mx, my, mouse_ok := Window_Creation.get_mouse_pointer_position(window, false);
+    mouse_x := cast(float32) mx;
+    mouse_y := cast(float32) my;
 
-    width, height := Simp.get_render_dimensions(window);
-    GetRect.ui_per_frame_update(window, width, height, current_time);
+    w := cast(float32) window_width;
+    h := cast(float32) window_height;
+
+    ui_begin_frame(mouse_x, mouse_y, ui_mouse_left_down, ui_mouse_right_down, ui_scroll_y, w, h, cast(float64) delta_time);
+}
+
+// end the UI frame - call this after all widget calls, before swap_buffers
+ui_end :: (using wp: *Windowed_Program) {
+    ui_end_frame();
 }
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
-
     if !fullscreen && fullscreen == enabled return;
 
-	#if OS == .WINDOWS {
+    #if OS == .WINDOWS {
         saved_window_info.rect.left = 0;
         saved_window_info.rect.top = 0;
         saved_window_info.rect.bottom = window_width;
         saved_window_info.rect.right = window_height;
 
-        // todo need to do somethign with these values right?
         success, new_width, new_height := toggle_fullscreen_exclusive(window, enabled, *saved_window_info);
         fullscreen = enabled;
         set_vsync(vsync);
-
     }
-
 }
 
 DEVMODEW :: struct {
@@ -301,15 +333,13 @@ DM_PELSHEIGHT : u32 : 0x00100000;
 CDS_FULLSCREEN : u32 : 0x00000004;
 DISP_CHANGE_SUCCESSFUL : s32 : 0;
 
-
-
 #if OS == .WINDOWS {
 
 _user32 :: #system_library "user32";
 ChangeDisplaySettingsW :: (lpDevMode: *DEVMODEW, dwflags: u32) -> s32 #foreign _user32;
 
 #import "Windows";
-toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Saved_Window_Info) -> (success: bool, width: s32, height: s32) {
+toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Window_Creation.Saved_Window_Info) -> (success: bool, width: s32, height: s32) {
     assert(saved != null);
 
     if desire_fullscreen {
@@ -343,7 +373,7 @@ toggle_fullscreen_exclusive :: (hwnd: HWND, desire_fullscreen: bool, saved: *Sav
 
         return true, width, height;
     } else {
-        ChangeDisplaySettingsW(null, 0);  // restore desktop mode
+        ChangeDisplaySettingsW(null, 0);
 
         x := saved.rect.left;
         y := saved.rect.top;
@@ -365,142 +395,112 @@ disable_fullscreen :: (using wp: *Windowed_Program) {
     set_fullscreen(wp, false);
 }
 
-get_rect_normalized :: (r: Rectangle, screen_width: float, screen_height: float) -> GetRect.Rect {
-    return get_rect_normalized(r.x, r.y, r.w, r.h, screen_width, screen_height);
-}
 
-get_rect_normalized :: (x: float, y: float, w: float, h: float, screen_width: float, screen_height: float) -> GetRect.Rect {
-    r: GetRect.Rect;
-    
-    // convert from [-1, 1] space to [0, screen_size] space
-    // the center in screen coordinates:
-    center_screen_x := (x + 1.0) * 0.5 * screen_width;
-    center_screen_y := (y + 1.0) * 0.5 * screen_height;
-    
-    // convert width and height from [-1, 1] range to screen pixels
-    // since w and h span from -1 to 1, a value of 2.0 would be full screen
-    // so we multiply by 0.5 to get the ratio, then by screen dimensions
-    screen_w := w * 0.5 * screen_width;
-    screen_h := h * 0.5 * screen_height;
-    
-    // since rect specifies bottom-left corner, subtract half the dimensions from center
-    r.x = center_screen_x - screen_w * 0.5;
-    r.y = center_screen_y - screen_h * 0.5;
-    r.w = screen_w;
-    r.h = screen_h;
-    
-    return r;
-}
+// ============================================================
+// Menu rendering - now uses the custom UI system
+// ============================================================
 
 render_main_menu :: (using wp : *Windowed_Menu_Program) {
-    width, height := Simp.get_render_dimensions(window);
-    label_theme := my_theme.label_theme;
+    ui_push_style_float(.FONT_SIZE, 28.0);
+    ui_label(window_name);
+    ui_pop_style_float(.FONT_SIZE);
 
-    r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    GetRect.label(r, window_name, *label_theme);
+    ui_separator();
+    ui_spacing(20);
 
-    // create a button in the top left hand corner.
-    k := height * 0.10;
-    // r := get_rect(5.0, (xx height) - 5.0 - k, 8.5*k, k);
-    r = get_rect_normalized(0, 0, 1, .125, xx width, xx height);
-
-    center_area_rect := Rectangle.{0, 0, 1, 1};
-
-    rectangles := subdivide_rectangle(center_area_rect, 8, .HORIZONTAL);
-
-    rects : [..] GetRect.Rect;
-    defer array_free(rects);
-    for rectangles array_add(*rects, get_rect_normalized(it, xx width, xx height));
-
-    if button(rects[0], "start") {
+    if ui_button("Start") {
         toggle_menu(wp);
     }
 
-    if button(rects[1], "graphics settings") {
+    if ui_button("Graphics Settings") {
         current_menu = .GRAPHICS_SETTINGS;
     }
 
-    if button(rects[2], "user settings") {
+    if ui_button("User Settings") {
         current_menu = .USER_SETTINGS;
     }
-    if button(rects[3], "sound settings") {
+
+    if ui_button("Sound Settings") {
         current_menu = .SOUND_SETTINGS;
     }
 
-  r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
-  if button(r, "exit") end_program = true;
+    ui_spacing(20);
+
+    if ui_button("Exit") {
+        end_program = true;
+    }
 }
 
-render_graphics_settings :: (using wp : * Windowed_Menu_Program) {
-    width, height := Simp.get_render_dimensions(window);
-    label_theme := my_theme.label_theme;
-    r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    GetRect.label(r, "Graphics Settings", *label_theme);
+render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
+    ui_push_style_float(.FONT_SIZE, 24.0);
+    ui_label("Graphics Settings");
+    ui_pop_style_float(.FONT_SIZE);
 
-    // create a button in the top left hand corner.
-    k := height * 0.10;
-    r = get_rect_normalized(0, 0, 1, .125, xx width, xx height);
+    ui_separator();
+    ui_spacing(10);
 
-    resolutions :: string.["1080x1920", "720x1280", "480x640"];
-    val : s32; // stupid throwaway to make the below work.
-    dropdown(r, resolutions , *val); // val is global
+    resolution_items :: string.["1920x1080", "1280x720", "640x480"];
+    ui_dropdown("Resolution", resolution_items, *menu_resolution_selection);
 
-    r = get_rect_normalized(0, -.125, 1, .125, xx width, xx height);
+    ui_spacing(4);
 
-    changed, checkbox_state := base_checkbox(r, "full screen", fullscreen);
-    if changed fullscreen = !fullscreen;
-
-    r = get_rect_normalized(0, -.25, 1, .125, xx width, xx height);
-
-    // this has to be on the camera settings.
-
-    slider_theme := my_theme.slider_theme;
-    // slider(r, *graphics_settings.field_of_view, 30, 110, 1, *slider_theme, "field of view: ");
-
-    r = get_rect_normalized(0, -.375, 1, .125, xx width, xx height);
-
-    slider(r, *max_fps, 30, 512, 1, *slider_theme, "max fps: ");
-
-    r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
-    if button(r, "back") current_menu = .MAIN;
-
-    r = get_rect_normalized(0.8, .8, .3, .1, xx width, xx height);
-    // if button(r, "defaults") current_menu = .MAIN;
-
-    r = get_rect_normalized(0.8, -.8, .3, .1, xx width, xx height);
-    if button(r, "apply") {
-        set_fullscreen(wp, fullscreen);
-
-        // not sure why setting this here causes the window to just disappear, which is bad.
-        // set_max_fps(wp, max_fps);
+    menu_fullscreen_checkbox = fullscreen;
+    if ui_checkbox("Fullscreen", *menu_fullscreen_checkbox) {
+        // value was toggled by the widget
     }
 
-    defer draw_popups();
+    ui_spacing(4);
+
+    menu_max_fps_float = cast(float32) max_fps;
+    ui_slider_float("Max FPS", *menu_max_fps_float, 30.0, 512.0);
+
+    ui_spacing(20);
+
+    ui_begin_row();
+    if ui_button("Apply") {
+        fullscreen = menu_fullscreen_checkbox;
+        set_fullscreen(wp, fullscreen);
+        max_fps = cast(u32)(menu_max_fps_float + 0.5);
+        set_max_fps(wp, max_fps);
+    }
+    if ui_button("Back") {
+        current_menu = .MAIN;
+    }
+    ui_end_row();
 }
 
 render_user_settings :: (using wp : *Windowed_Menu_Program) {
-    width, height := Simp.get_render_dimensions(window);
-    label_theme := my_theme.label_theme;
-    r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    GetRect.label(r, "User Settings", *label_theme);
+    ui_push_style_float(.FONT_SIZE, 24.0);
+    ui_label("User Settings");
+    ui_pop_style_float(.FONT_SIZE);
 
-    r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
-    if button(r, "back") current_menu = .MAIN;
+    ui_separator();
+    ui_spacing(10);
+
+    ui_label_disabled("No user settings available yet.");
+
+    ui_spacing(20);
+
+    if ui_button("Back") {
+        current_menu = .MAIN;
+    }
 }
 
 render_sound_settings :: (using wp : *Windowed_Menu_Program) {
-    width, height := Simp.get_render_dimensions(window);
-    label_theme := my_theme.label_theme;
-    r := get_rect_normalized(create_rectangle(0, 1, 1, 0.2, .TOP_CENTER), xx width, xx height);
-    GetRect.label(r, "Sound Settings", *label_theme);
+    ui_push_style_float(.FONT_SIZE, 24.0);
+    ui_label("Sound Settings");
+    ui_pop_style_float(.FONT_SIZE);
 
-    r = get_rect_normalized(-0.8, -.8, .2, .1, xx width, xx height);
-    if button(r, "back") current_menu = .MAIN;
+    ui_separator();
+    ui_spacing(10);
 
-    slider_theme := my_theme.slider_theme;
+    ui_slider_float("Volume", *volume, 0, 100);
 
-    r = get_rect_normalized(0, -.375, 1, .125, xx width, xx height);
-    slider(r, *volume, 0, 100, 1, *slider_theme, "volume: ");
+    ui_spacing(20);
+
+    if ui_button("Back") {
+        current_menu = .MAIN;
+    }
 }
 
 render_menus :: (using wp : *Windowed_Menu_Program) {
@@ -512,7 +512,7 @@ render_menus :: (using wp : *Windowed_Menu_Program) {
         case .USER_SETTINGS;
             render_user_settings(wp);
         case .SOUND_SETTINGS;
-            render_user_settings(wp);
+            render_sound_settings(wp);
     }
 }
 
@@ -520,10 +520,12 @@ render_tick_stats :: (using wp : *Windowed_Program) {
     average_tick_ms : int = xx (get_average_delta_time(*tick_timer) * 1000);
     average_fps : int = xx (1 / get_average_delta_time(*tick_timer));
 
-    label_theme := my_theme.label_theme;
-    r := get_rect_normalized(create_rectangle(1, 1, 0.25, 0.1, .TOP_RIGHT), xx window_width, xx window_height);
-
-    GetRect.label(r,sprint("%/%ms", average_fps, average_tick_ms), *label_theme);
+    // render as a small window in the top-right
+    w := cast(float32) window_width;
+    if ui_begin_window("##tick_stats", w - 160, 5, 150, 40) {
+        ui_label(tprint("%fps / %ms", average_fps, average_tick_ms));
+        ui_end_window();
+    }
 }
 
 toggle_menu :: (using wp: *Windowed_Menu_Program) {
@@ -545,15 +547,15 @@ Camera_Mode :: enum {
 Movement_Mode :: enum {
     GOD;
     MANUAL;
-    FPS; // you'll need to do collision detection in this case.
+    FPS;
 }
 
 is_key_down :: inline (key : Input.Key_Code) -> bool #must {
-	return (Input.input_button_states[cast (s64) key] & .DOWN) != 0;
+    return (Input.input_button_states[cast (s64) key] & .DOWN) != 0;
 }
 
 is_key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
-	return (Input.input_button_states[cast (s64) key] & .START) != 0;
+    return (Input.input_button_states[cast (s64) key] & .START) != 0;
 }
 
 sample_first_person_movement_input :: () -> First_Person_Movement_Input {
@@ -563,7 +565,7 @@ sample_first_person_movement_input :: () -> First_Person_Movement_Input {
             is_key_down (xx #char "D"),
             is_key_down (xx #char "A"),
             is_key_down (xx #char " "),
-        }; 
+        };
 }
 
 get_forward_and_side_input :: (using fpmi : First_Person_Movement_Input) -> forward_input: float, side_input: float {
@@ -578,21 +580,12 @@ get_forward_and_side_input :: (using fpmi : First_Person_Movement_Input) -> forw
     return forward_input, right_input;
 }
 
-/*
-
-A windowed program 3d is something you can use to get to rendering things on the screen fast
-
-*/
-
-// this should be moved to its own file because it seems kinda important for some reason.
-
 Orientation :: struct {
     forward: Vector3;
     right: Vector3;
     up: Vector3;
 }
 
-// #running away from our problems
 STANDARD_ORIENTATION :: #run Orientation.{X3, -Y3, Z3};
 GL_ORIENTATION :: Orientation.{Z3, X3, Y3};
 NEGATIVE_Z_GL_ORIENTATION :: #run Orientation.{-Z3, X3, Y3};
@@ -603,104 +596,57 @@ Windowed_Program_3D :: struct {
 
     orientation := STANDARD_ORIENTATION;
 
-    /*
-    the reasoning for this choice is as follows. 
-    - We are humans, at rest we look forward, the easiest direction to move is forward, in order to move or look left or right, it takes extra effort, additionally looking up is even more difficult.
-    - Because of that it makes sense to map the first direction, so we pick e1/x/(1, 0, 0) to represent forward. 
-    - In two dimensions cos and sin rotate counter clockwise as theta increases (see the turns module for more details)
-    - Thus if we follow the rotation of cos/sin then we eventually get to e2/y/(0, 1, 0), so the default cartesian plane has right handedness baked into it
-    - If x is forward, then that means y is left based on the previous line, so -y would be right
-    - Once you have x and y, you add z, if you add z and make it down then the basis is left handed, which changes from the 2d basis, so it's less confusing to not do that
-    - So we make z up.
-    */
-
-    /*
-
-    The basis E = (e1, e2, 3) is right handed, the reason why is because we defined our 3d grid system in a way such that the right hand rule works on it ie 
-    y was placed counter clockwise to x and z counterclockwise to y. This is why we can call this right handed in the first place. If we had not made our grid system like this
-    then it wouldn't be called right handed anymore.
-
-    Alternatively if we claimed that the basis E = (e1, e2, e3) is right handed, then it would force our axes to be lined up in some way to make sure that its true. 
-    We can see that either way this is just a convention to make things work.
-
-    Given two bases B = (b1, b2, b3) and C = (c1, c2, c3) then we can determine if C is the same handedness of B by writing the basis vectors c1, c2, c3 in the B basis to obtain
-    C' = (j1, j2, j3) and then using a the standard procedure to determine of B and C' are of the same handedness.
-
-    Additionally the basis (e1, e2, e3) can be thought of as (forward, left, up) because of the previous talk. So we can ask ourselves if the basis (-e3, -e1, e2) is right handed
-    and yes it is because if you rotate around e2 counter clockwise 90 degrees and then around z 90 degrees you get the second basis, and rotations don't change the handedness.
-
-    Concrete example we want to know if the basis given by 
-    */
- 
     camera_per_object_transform_color_renderer : Camera_Per_Object_Transform_Color_Renderer;
 
     camera : Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
 
-    // you can use this to override the camera look behavior to disable it if you want.
     camera_look_active := true;
 
-    // only used if you want to use the default movement modes.
     camera_velocity : Vector3;
     movement_mode : Movement_Mode;
 
-    // you only use this when you're really not doing anything unique in your program and you're fine
-    // with the windowed program 3d handling the rendering of your objects so that you don't have to manually render
-    // most programs will outgrow this but it's nice at the start
     renderables : [..] Camera_Per_Object_Transform_Color_Renderable;
-
 
     last_mouse_delta_x, last_mouse_delta_y: int;
 
     // 2D camera state
-    ortho_center : Vector2;  // where the camera is looking, starts at origin
-    ortho_height := 10.0;    // controls zoom level
+    ortho_center : Vector2;
+    ortho_height := 10.0;
 
     // drag state
     is_dragging := false;
     drag_start_mouse : Vector2;
     drag_start_center : Vector2;
-
-
 }
 
 init :: (using wp3 : *Windowed_Program_3D) {
-    init(*wp); // config is loaded here.
+    init(*wp); // config is loaded here, UI is initialized here
     init(*camera_per_object_transform_color_renderer);
     init(*absolute_position_color_renderer);
     init_section_timer(*section_timer);
 
-    // we don't need to see below that much because a frame is always slow
-    // never fast?
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
 
-
     conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
     if ok_s camera.sensitivity = conf_sens;
-
 
     conf_fullscreen, ok_f := get_bool(*configuration, "graphics", "fullscreen");
     if ok_f {
         fullscreen = conf_fullscreen;
         set_fullscreen(wp3, fullscreen);
     }
-
-
 }
 
 set_mouse_pointer_position :: inline (x : int, y : int) {
-	#if OS == .WINDOWS {
-		// Windows module does not have SetCursorPos
-		// win32 :: #import "Windows";
-		// win32.SetCursorPos (xx x, xx y);
-		// Hugh...
-		user32 :: #system_library "User32";
-		SetCursorPos :: (x : s32, y : s32) -> s32 #foreign user32;
-		SetCursorPos (xx x, xx y);
-	} else {
-		// @Todo!
-	}
+    #if OS == .WINDOWS {
+        user32 :: #system_library "User32";
+        SetCursorPos :: (x : s32, y : s32) -> s32 #foreign user32;
+        SetCursorPos (xx x, xx y);
+    } else {
+        // @Todo!
+    }
 }
 
 format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
@@ -711,39 +657,22 @@ format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
 }
 
 render_movement_stats :: (using wp3 : *Windowed_Program_3D) {
-    label_theme := my_theme.label_theme;
-    rect_height := 0.1;
-    rect_width := 0.4;
-    r_pos := get_rect_normalized(create_rectangle(-1, 1, rect_width, rect_height, .TOP_LEFT), xx window_width, xx window_height);
-    r_vel := get_rect_normalized(create_rectangle(-1, 1 - rect_height, rect_width, rect_height, .TOP_LEFT), xx window_width, xx window_height);
-
-    GetRect.label(r_pos, format_vec3(camera.position), *label_theme);
-    GetRect.label(r_vel, format_vec3(camera_velocity), *label_theme);
+    ui_label(tprint("pos: %", format_vec3(camera.position)));
+    ui_label(tprint("vel: %", format_vec3(camera_velocity)));
 }
 
 render_camera_stats :: (using wp3 : *Windowed_Program_3D) {
-    label_theme := my_theme.label_theme;
-    rect_height := 0.1;
-    rect_width := 0.4;
-    r := get_rect_normalized(create_rectangle(-1, -1, rect_width, rect_height, .BOTTOM_LEFT), xx window_width, xx window_height);
-
-    GetRect.label(r, format_vec3(get_forward(*camera)), *label_theme);
+    ui_label(tprint("fwd: %", format_vec3(get_forward(*camera))));
 }
 
 render_iteration :: (using wp3 : *Windowed_Program_3D) {
-    label_theme := my_theme.label_theme;
-    rect_height := 0.1;
-    rect_width := 0.4;
-    r := get_rect_normalized(create_rectangle(1, -1, rect_width, rect_height, .BOTTOM_RIGHT), xx window_width, xx window_height);
-
-    GetRect.label(r, tprint("%", iteration), *label_theme);
+    ui_label(tprint("iter: %", iteration));
 }
 
 
 keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
     #if OS == .WINDOWS {
-        // so that the cursor doesn't fall off the screen.
-        x, y, w, h := get_dimensions(window, right_handed_mouse_position);
+        x, y, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
         set_mouse_pointer_position (w / 2, h / 2);
     } else {
         // don't know how to do this on linux yet.
@@ -752,21 +681,15 @@ keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
 
 update_listener_orientation :: (position: Vector3, yaw: float) {
     yaw_quat: Quaternion;
-    // explain why negative yaw...
     set_from_axis_and_angle(*yaw_quat, 0, 0, 1, -yaw);
 
     rotation_y: Quaternion;
     set_from_axis_and_angle(*rotation_y, 0, 1, 0, PI/2);
-    
+
     rotation_z: Quaternion;
     set_from_axis_and_angle(*rotation_z, 0, 0, 1, PI/2);
 
-    // our objects position in the sound system adheres to NEGATIVE_Z_GL_ORIENTATION
-    // listener position assume the STANDARD_ORIENTATION so we have to correct it or else
-    // it going to think left right and up down are reversed, here' we're making our yaw into pitch
-    // todo probably better to put the positions in the right way no? yeah, but this works right now change later if needed.
     correction_quat := rotation_z * rotation_y;
-
     listener_orientation := yaw_quat * correction_quat;
 
     Sound_Player.update_listener(position, listener_orientation);
@@ -788,14 +711,14 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             last_mouse_delta_y = Input.mouse_delta_y;
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
         } else {
-            x, y, success := get_mouse_pointer_position(window, right_handed_mouse_position);
+            x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
             if success update_angles(*camera, x, y);
         }
     } else {
         show_cursor(*wp);
     }
 
-    vx, vy, vw, vh := get_dimensions(window, right_handed_mouse_position);
+    vx, vy, vw, vh := Window_Creation.get_dimensions(window, right_handed_mouse_position);
 
     if camera_mode == {
         case .FIRST_PERSON;
@@ -831,7 +754,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
         aspect := cast(float) vw / cast(float) vh;
         ortho_width := ortho_height * aspect;
 
-        // scroll to zoom
         for Input.events_this_frame {
             if it.type == .MOUSE_WHEEL {
                 if it.wheel_delta > 0 {
@@ -843,9 +765,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             }
         }
 
-        // drag to pan
         mouse_left_down := is_key_down(xx Input.Key_Code.MOUSE_BUTTON_LEFT);
-
         mx, my, mouse_success := get_mouse_pointer_position(window, true);
 
         if mouse_success {
@@ -871,7 +791,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     }
 
     glUseProgram(absolute_position_color_renderer.shader_program_gl_handle);
-    // set_aspect_ratio_uniform(*absolute_position_color_renderer, .{xx window_width, xx window_height});
 
     glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
@@ -901,10 +820,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     }
 }
 
-// this is what you call when you really don't care about control yet, you're just like I want geometry on the screen now and I want menus 
-// and I don't want to care about graphics or anything, but I'm just testing some sort of minimal 3d program and that's all. 
-// most people would only ever call this when they're doing basic experimentation and graphics is not the point of the program.
-// this function provides a good starting point to see how to integrate simp and your own rendering logic.
 render_scene :: (using wp3 : *Windowed_Program_3D) {
 
     for renderables queue_render(*wp3.camera_per_object_transform_color_renderer, it.object_index);
@@ -912,29 +827,36 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
     Simp.update_window(wp3.window);
     Simp.clear_render_target(.15, .08, .08, 1);
 
+    // begin the UI frame
+    ui_begin(*wp3.wp);
+
     if (wp3.current_menu == .NONE) {
-        // re-enable depth testing for 3d rendering without these lines depth is messed up, this is because simp disables it probably, look into this later when caring more
+        // re-enable depth testing for 3d rendering
         glDepthMask(GL_TRUE);
         glEnable(GL_DEPTH_TEST);
         glClear(GL_DEPTH_BUFFER_BIT);
         render(*wp3.camera_per_object_transform_color_renderer);
 
-        context.simp.current_shader = null; 
-        // rendering these things should be optional at somepoint but it seems useful for now.
-        render_tick_stats(wp3);
-        render_movement_stats(wp3);
-        render_camera_stats(wp3);
+        // HUD elements via the custom UI as small windows
+        if ui_begin_window("##hud_stats", 5, 5, 300, 100) {
+            render_tick_stats(wp3);
+            render_movement_stats(wp3);
+            render_camera_stats(wp3);
+            render_iteration(wp3);
+            ui_end_window();
+        }
+
+        // performance graphs still use the absolute_position_color_renderer
         update_graph_visual(*wp3.performance_graph);
         render_performance_graph(wp3);
         render_section_bar_graph(wp3);
     } else {
-        // when you render with your own custom rendering it clobbers the opengl global state or at least would use the program and then set the program to be empty
-        // either way simp internally keeps track of the last shader it used and it would be the same as last draw, it doesn't have to re-bind the shader
-        // this is fine in the context of simp but with your own rendering it messes up this state causing simp to not rebind a shader when it should
-        // by setting this to null it forces simp to rebind all the shaders it needs
-        context.simp.current_shader = null; 
+        // render menus using the custom UI
         render_menus(*wp3.wp);
     }
+
+    // end the UI frame - flushes all draw commands
+    ui_end(*wp3.wp);
 
     Simp.swap_buffers(wp3.window, false);
 }
@@ -961,8 +883,8 @@ hide_cursor :: (using wp: *Windowed_Program) {
 }
 
 
-// performance graph stuff
-// this is now encompassing the frame time graph and the per-frame break down
+// performance graph 
+
 Performance_Graph :: struct {
     graph_min_ms: float = 4.0;
     graph_max_ms: float = 25.0;
@@ -970,16 +892,12 @@ Performance_Graph :: struct {
     bar_graph_min_ms: float = 0.0;
     bar_graph_max_ms: float = 10.0;
 
-    GRAPH_STEP_MS :: 0.5;     // additive step for min/max adjustment
-    GRAPH_MS_FLOOR :: 0.0;    // absolute minimum for min_ms
-    GRAPH_MS_CEILING :: 200.0; // absolute maximum for max_ms
-    GRAPH_MIN_RANGE :: 0.5;   // don't let max - min get smaller than this
+    GRAPH_STEP_MS :: 0.5;
+    GRAPH_MS_FLOOR :: 0.0;
+    GRAPH_MS_CEILING :: 200.0;
+    GRAPH_MIN_RANGE :: 0.5;
 }
 
-// theoretically this doesn't need a wp3 to do stuff.
-// you need to mark these in your main loop
-// start_section(*windowed_program_3d.section_timer, "tick");
-// end_section(*windowed_program_3d.section_timer, "tick");
 render_performance_graph :: (using wp: *Windowed_Program) {
     push_allocator(temp);
     graph_renderable := create_frame_time_graph_with_background(
@@ -997,7 +915,6 @@ update_graph_visual :: (using pg: *Performance_Graph) {
     shift_down := is_key_down(Input.Key_Code.SHIFT);
 
     if shift_down {
-        // bar graph: shift + arrow keys
         if is_key_just_pressed(.ARROW_UP) {
             bar_graph_max_ms -= GRAPH_STEP_MS;
             if bar_graph_max_ms < bar_graph_min_ms + GRAPH_MIN_RANGE  bar_graph_max_ms = bar_graph_min_ms + GRAPH_MIN_RANGE;
@@ -1015,7 +932,6 @@ update_graph_visual :: (using pg: *Performance_Graph) {
             if bar_graph_min_ms < GRAPH_MS_FLOOR  bar_graph_min_ms = GRAPH_MS_FLOOR;
         }
     } else {
-        // performance graph: arrow keys
         if is_key_just_pressed(.ARROW_UP) {
             graph_max_ms -= GRAPH_STEP_MS;
             if graph_max_ms < graph_min_ms + GRAPH_MIN_RANGE  graph_max_ms = graph_min_ms + GRAPH_MIN_RANGE;
@@ -1035,103 +951,92 @@ update_graph_visual :: (using pg: *Performance_Graph) {
     }
 }
 
-// these functions integrate with section timers to produce a graph of the performance of the past MAX_HISTORY frames
-// we should eventually try to improve the way we can iterate over section timer history if we make more functions that do this
-// but it should be ok for now.
-
 create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33) -> Indexed_Triangle_Positions_Colors {
-    
+
     points: [MAX_HISTORY] Vector2;
     point_count: int = 0;
-    
+
     if st.completed_tree_count == 0 {
         empty: Indexed_Triangle_Positions_Colors;
         return empty;
     }
-    
+
     count := cast(int) st.completed_tree_count;
-    
+
     oldest_index: int;
     if count < MAX_HISTORY {
         oldest_index = 0;
     } else {
         oldest_index = cast(int) st.completed_tree_write_index;
     }
-    
+
     range_ms := max_ms - min_ms;
     if range_ms <= 0 range_ms = 1.0;
-    
+
     for i: 0..count-1 {
         idx := (oldest_index + i) % MAX_HISTORY;
         root := st.completed_tree_roots[idx];
         if root == null || !root.completed continue;
-        
-        // x: normalized [0, 1] across the history window
-        // y: frame time normalized into the [min_ms, max_ms] window
+
         x_norm := cast(float) i / cast(float) max(count - 1, 1);
         frame_ms := root.elapsed_seconds * 1000.0;
         y_norm := clamp((frame_ms - min_ms) / range_ms, 0.0, 1.0);
-        
+
         points[point_count] = .{x_norm, y_norm};
         point_count += 1;
     }
-    
+
     if point_count < 2 {
         empty: Indexed_Triangle_Positions_Colors;
         return empty;
     }
-    
+
     points_slice: [] Vector2;
     points_slice.data = points.data;
     points_slice.count = point_count;
-    
+
     graph_itp := create_graph(points_slice, graph_origin, graph_size);
-    
+
     itpc: Indexed_Triangle_Positions_Colors;
     for graph_itp.indices array_add(*itpc.indices, it);
     for graph_itp.positions array_add(*itpc.positions, it);
-    
+
     color := Vector3.{0.2, 0.8, 0.3};
     array_reserve(*itpc.rgb_colors, itpc.positions.count);
     for 1..itpc.positions.count array_add(*itpc.rgb_colors, color);
-    
+
     return itpc;
 }
 
 
-// todo this function depends on the coordinate system orientation which is bad.
 create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Colors {
     itpc: Indexed_Triangle_Positions_Colors;
 
     range_ms := max_ms - min_ms;
     if range_ms <= 0 range_ms = 1.0;
 
-    // background quad (furthest back)
     merge(*itpc, create_itpc_with_color(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
         .{0.1, 0.1, 0.1}));
 
-    // 1ms tick lines - draw behind graph data
-    line_half_height := graph_size.y * 0.005; // thinner than the target line
-    first_tick_ms := cast(float) cast(int) min_ms + 1.0; // first whole ms above min
+    line_half_height := graph_size.y * 0.005;
+    first_tick_ms := cast(float) cast(int) min_ms + 1.0;
     tick_ms := first_tick_ms;
     while tick_ms < max_ms {
-        if tick_ms != target_ms { // skip the target ms slot, we'll draw it specially
+        if tick_ms != target_ms {
             y_norm := (tick_ms - min_ms) / range_ms;
             if y_norm >= 0.0 && y_norm <= 1.0 {
                 y := graph_origin.y + y_norm * graph_size.y;
                 merge(*itpc, create_itpc_with_color(
                     create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, 0.01),
-                    .{0.35, 0.35, 0.35})); // subtle grey, behind graph data
+                    .{0.35, 0.35, 0.35}));
             }
         }
         tick_ms += 1.0;
     }
 
-    // the actual graph data at z = 0 (middle layer)
     merge(*itpc, create_frame_time_graph(st, graph_origin, graph_size, min_ms, max_ms));
 
-    // target line only show if it's within the visible range (frontmost)
     target_y_norm := (target_ms - min_ms) / range_ms;
     if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
         target_y := graph_origin.y + target_y_norm * graph_size.y;
@@ -1144,14 +1049,12 @@ create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Ve
     return itpc;
 }
 
-// bar graph for per-tick breakdown
 
 Section_Color_Entry :: struct {
     name: string;
     color: Vector3;
 }
 
-// module-level state for tracking seen section names
 seen_section_colors: [MAX_SECTIONS] Section_Color_Entry;
 seen_section_color_count: int = 0;
 
@@ -1159,44 +1062,40 @@ hash_section_name_to_color :: (name: string) -> Vector3 {
     for i: 0..seen_section_color_count-1 {
         if seen_section_colors[i].name == name return seen_section_colors[i].color;
     }
-    
-    // hash the name
+
     h: u32 = 5381;
     for i: 0..name.count-1 {
         h = ((h << 5) + h) + cast(u32) name[i];
     }
-    
-    // generate rgb channels using different prime multipliers keep values in a visible range [0.3, 0.9] so they're not too dark or washed out
+
     r_hash := cast(float)((h * 2654435761) % 1000) / 1000.0;
     g_hash := cast(float)((h * 2246822519) % 1000) / 1000.0;
     b_hash := cast(float)((h * 3266489917) % 1000) / 1000.0;
-    
+
     color := Vector3.{
         0.3 + r_hash * 0.6,
         0.3 + g_hash * 0.6,
         0.3 + b_hash * 0.6
     };
-    
+
     if seen_section_color_count < MAX_SECTIONS {
         seen_section_colors[seen_section_color_count] = .{name, color};
         seen_section_color_count += 1;
     }
-    
+
     return color;
 }
 
 create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67, print_legend: bool = false) -> Indexed_Triangle_Positions_Colors {
     itpc: Indexed_Triangle_Positions_Colors;
-    
+
     range_ms := max_ms - min_ms;
     if range_ms <= 0 range_ms = 1.0;
-    
-    // background quad
+
     merge(*itpc, create_itpc_with_color(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
         .{0.1, 0.1, 0.1}));
-    
-    // 1ms tick lines
+
     line_half_height := graph_size.y * 0.005;
     tick_ms := cast(float)(cast(int) min_ms + 1);
     while tick_ms < max_ms {
@@ -1211,8 +1110,7 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
         }
         tick_ms += 1.0;
     }
-    
-    // target line
+
     target_y_norm := (target_ms - min_ms) / range_ms;
     if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
         target_y := graph_origin.y + target_y_norm * graph_size.y;
@@ -1221,16 +1119,14 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
             create_quad(graph_origin.x, target_y - line_half_height_target, graph_origin.x + graph_size.x, target_y + line_half_height_target, -0.02),
             .{1.0, 0.0, 0.0}));
     }
-    
-    // get the most recent completed tick
+
     root := get_latest_completed_section(st);
     if root == null return itpc;
     if root.child_count == 0 return itpc;
-    
+
     child_count := cast(int) root.child_count;
-    
-    // layout: divide horizontal space evenly among children with small gaps
-    gap_fraction := 0.1;  // 10% of each bar slot is gap
+
+    gap_fraction := 0.1;
     bar_slot_width := graph_size.x / cast(float) child_count;
     gap_width := bar_slot_width * gap_fraction;
     bar_width := bar_slot_width - gap_width;
@@ -1238,20 +1134,20 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
     if print_legend {
         print("[section_bar_graph] Legend (left to right):\n");
     }
-    
+
     for i: 0..child_count-1 {
         child := root.children[i];
         if child == null continue;
         if !child.completed continue;
-        
+
         child_ms := child.elapsed_seconds * 1000.0;
         bar_height_norm := clamp((child_ms - min_ms) / range_ms, 0.0, 1.0);
-        
+
         bar_x0 := graph_origin.x + cast(float) i * bar_slot_width + gap_width * 0.5;
         bar_x1 := bar_x0 + bar_width;
         bar_y0 := graph_origin.y;
         bar_y1 := graph_origin.y + bar_height_norm * graph_size.y;
-        
+
         color := hash_section_name_to_color(child.name);
 
         if print_legend {
@@ -1262,20 +1158,20 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
                 FormatFloat.{value=color.y, trailing_width=2, zero_removal=.NO},
                 FormatFloat.{value=color.z, trailing_width=2, zero_removal=.NO});
         }
-        
+
         merge(*itpc, create_itpc_with_color(
             create_quad(bar_x0, bar_y0, bar_x1, bar_y1, -0.01),
             color));
     }
 
     if print_legend print("\n");
-    
+
     return itpc;
 }
 
 render_section_bar_graph :: (using wp: *Windowed_Program) {
     push_allocator(temp);
-    
+
     should_print := is_key_just_pressed(xx #char "P");
 
     bar_renderable := create_section_bar_graph(
@@ -1290,10 +1186,12 @@ render_section_bar_graph :: (using wp: *Windowed_Program) {
     immediate_render(*wp.absolute_position_color_renderer, bar_renderable);
 }
 
-// network section
+
+// ============================================================
+// Network section (unchanged)
+// ============================================================
 
 #import "tbx/network";
-
 #import "tbx/serialize";
 
 packet_create :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
@@ -1304,12 +1202,8 @@ packet_create :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
     return packet;
 }
 
-
-
 #import "tbx/circular_array";
 
-// creates a filled area graph from a rolling history of float values.
-// reference_lines is an optional array of y-values (in data space) where horizontal lines should be drawn.
 create_time_series_graph :: (
     history: *Circular_Array(float, $N),
     graph_origin: Vector2,
@@ -1325,12 +1219,10 @@ create_time_series_graph :: (
     range_val := max_val - min_val;
     if range_val <= 0 range_val = 1.0;
 
-    // background (furthest back)
     merge(*itpc, create_itpc_with_color(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
         .{0.1, 0.1, 0.1}));
 
-    // graph data (middle layer)
     count := history.count;
     if count >= 2 {
         points: [N] Vector2;
@@ -1357,7 +1249,6 @@ create_time_series_graph :: (
         merge(*itpc, graph_itpc);
     }
 
-    // reference lines (in front of graph data)
     line_half_height := graph_size.y * 0.008;
     for ref_idx: 0..reference_lines.count-1 {
         ref_val := reference_lines[ref_idx];
@@ -1373,9 +1264,6 @@ create_time_series_graph :: (
     return itpc;
 }
 
-// renders a horizontal strip of colored quads. each sample in the history maps to a column.
-// color_map_func takes the float value and returns a color for that column.
-// if color_map_func is null, uses a default: 0.0 -> red, 1.0 -> green.
 create_colored_timeline_strip :: (
     history: *Circular_Array(float, $N),
     graph_origin: Vector2,
@@ -1385,7 +1273,6 @@ create_colored_timeline_strip :: (
 
     itpc: Indexed_Triangle_Positions_Colors;
 
-    // background
     merge(*itpc, create_itpc_with_color(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
         .{0.1, 0.1, 0.1}));
@@ -1420,15 +1307,12 @@ create_colored_timeline_strip :: (
 }
 
 default_binary_color_map :: (val: float) -> Vector3 {
-    if val > 0.5 return .{0.2, 0.8, 0.2}; // green
-    return .{0.8, 0.2, 0.2}; // red
+    if val > 0.5 return .{0.2, 0.8, 0.2};
+    return .{0.8, 0.2, 0.2};
 }
 
-// i'm just putting this here which is wrong.
 #import "tbx/networked_interpolator";
 
-// renders the four npsq monitoring visualizations stacked vertically.
-// call this from your main loop after per_frame_update, before swap_buffers.
 render_npsq_monitor_graphs :: (
     renderer: *Absolute_Position_Color_Renderer,
     npsq: *Networked_Periodic_Signal_Quantizer($T, $MONITOR),
@@ -1445,7 +1329,6 @@ render_npsq_monitor_graphs :: (
 
         y := origin_y;
 
-        // buffer occupancy over time
         {
             ref_lines: [2] float;
             ref_lines[0] = cast(float) npsq.target_num_states;
@@ -1468,7 +1351,6 @@ render_npsq_monitor_graphs :: (
             y += graph_height + gap;
         }
 
-        // mode indicator (green = normal, red = repopulate)
         {
             graph := create_colored_timeline_strip(
                 *npsq.mode_history,
@@ -1479,7 +1361,6 @@ render_npsq_monitor_graphs :: (
             y += graph_height + gap;
         }
 
-        // emit result (green = had value, red = no value)
         {
             graph := create_colored_timeline_strip(
                 *npsq.emit_result_history,
@@ -1490,7 +1371,6 @@ render_npsq_monitor_graphs :: (
             y += graph_height + gap;
         }
 
-        // removal count per push
         {
             graph := create_time_series_graph(
                 *npsq.removal_count_history,
