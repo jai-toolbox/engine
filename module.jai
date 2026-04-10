@@ -550,12 +550,30 @@ Movement_Mode :: enum {
     FPS;
 }
 
+// we can remove the is prefix.
+
 is_key_down :: inline (key : Input.Key_Code) -> bool #must {
     return (Input.input_button_states[cast (s64) key] & .DOWN) != 0;
 }
 
 is_key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
     return (Input.input_button_states[cast (s64) key] & .START) != 0;
+}
+
+right_mouse_just_pressed :: () -> bool #must {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .START != 0;
+}
+
+left_mouse_just_pressed :: () -> bool #must {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT] & .START != 0;
+}
+
+left_mouse_pressed :: () -> bool #must {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT] & .DOWN != 0;
+}
+
+right_mouse_pressed :: () -> bool #must {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .DOWN != 0;
 }
 
 sample_first_person_movement_input :: () -> First_Person_Movement_Input {
@@ -1186,10 +1204,6 @@ render_section_bar_graph :: (using wp: *Windowed_Program) {
     immediate_render(*wp.absolute_position_color_renderer, bar_renderable);
 }
 
-
-// ============================================================
-// Network section (unchanged)
-// ============================================================
 
 #import "tbx/network";
 #import "tbx/serialize";
