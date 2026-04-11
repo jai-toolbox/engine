@@ -33,7 +33,7 @@ Current_Menu :: enum {
 }
 
 Looping_Program :: struct {
-    end_program := false;
+    end_program := false; // loop on this condition
 
     max_fps : u32 = 144;
     min_frame_time :float;
