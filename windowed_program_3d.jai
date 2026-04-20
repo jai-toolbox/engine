@@ -274,14 +274,14 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
         render_performance_graph(wp3);
         render_section_bar_graph(wp3);
     } else if wp3.current_menu == .MAIN {
-        // initial menu - no 3D scene visible (or you could show it, up to you)
+        // initial menu, no 3D scene visible (or you could show it, up to you)
         render_menus(*wp3.wp);
     } else {
-        // in-game menu or settings - render over the 3D scene
+        // in-game menu or settings, render over the 3D scene
         render_menus(*wp3.wp);
     }
 
-    // end the UI frame - flushes all draw commands
+    // end the UI frame, flushes all draw commands
     ui_end(*wp3.wp);
 
     // play UI sounds from audio events emitted during the frame
