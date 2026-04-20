@@ -69,8 +69,8 @@ init :: (using wp3 : *Windowed_Program_3D) {
     // enumerate available resolutions before loading settings
     enumerate_resolutions(*wp3.wp);
 
-    menu_fullscreen_checkbox = fullscreen;
-    menu_vsync_checkbox = vsync;
+    // menu_fullscreen_checkbox = fullscreen;
+    // menu_vsync_checkbox = vsync;
 
     conf_sens, ok_s := get_float(*configuration, "input", "sensitivity");
     if ok_s camera.sensitivity = conf_sens;
@@ -95,7 +95,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     per_frame_update(*wp3.wp);
 
     // sync sensitivity from menu to camera
-    camera.sensitivity = menu_sensitivity;
+    // camera.sensitivity = menu_sensitivity;
 
     // handle ESC to toggle in-game menu
     // handle M to toggle mouse cursor without opening menu

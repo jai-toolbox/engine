@@ -92,10 +92,10 @@ enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
         }
 
         // find current resolution in the list
-        menu_resolution_selection = 0;
+        resolution_selection = 0;
         for i : 0..available_resolutions.count-1 {
             if available_resolutions[i].width == window_width && available_resolutions[i].height == window_height {
-                menu_resolution_selection = cast(s32) i;
+                resolution_selection = cast(s32) i;
                 break;
             }
         }
@@ -115,9 +115,9 @@ apply_resolution :: (using wp: *Windowed_Menu_Program) {
     #if OS == .WINDOWS {
         win32 :: #import "Windows";
 
-        if menu_resolution_selection >= 0 && menu_resolution_selection < cast(s32) available_resolutions.count {
-            new_w := available_resolutions[menu_resolution_selection].width;
-            new_h := available_resolutions[menu_resolution_selection].height;
+        if resolution_selection >= 0 && resolution_selection < cast(s32) available_resolutions.count {
+            new_w := available_resolutions[resolution_selection].width;
+            new_h := available_resolutions[resolution_selection].height;
 
             if new_w != window_width || new_h != window_height {
                 if !fullscreen {
@@ -144,24 +144,38 @@ apply_resolution :: (using wp: *Windowed_Menu_Program) {
     }
 }
 
+apply_graphics_settings :: (using wp: *Windowed_Menu_Program) {
+    set_fullscreen(wp, desired_fullscreen);
+    set_vsync(desired_vsync);
+    vsync = desired_vsync;
+    set_max_fps(wp, desired_max_fps);
+    max_fps = desired_max_fps;
+    apply_resolution(wp);
+}
+
 
 Windowed_Menu_Program :: struct {
     using #as base : Windowed_Program;
 
     current_menu := Current_Menu.MAIN;
-    menu_return_to := Current_Menu.MAIN;  // where "Back" should go
+    menu_return_to := Current_Menu.MAIN;
 
-    // menu state
+    // pending settings (what the UI edits, applied on "Apply")
+    desired_fullscreen := false;
+    desired_vsync := false;
+    desired_max_fps : u32 = 144;
+
     volume: float32 = 50.0;
-    menu_fullscreen_checkbox: bool = false;
-    menu_vsync_checkbox: bool = false;
-    menu_resolution_selection: s32 = 0;
-    menu_max_fps_float: float32 = 144.0;
-
-    menu_sensitivity: float32 = 0.3;
-
+    sensitivity: float32 = 0.3;
+    resolution_selection: s32 = 0;
     available_resolutions: [..] Resolution_Entry;
     resolution_labels: [..] string;
+}
+
+init_menu_defaults :: (using wp: *Windowed_Menu_Program) {
+    desired_fullscreen = fullscreen;
+    desired_vsync = vsync;
+    desired_max_fps = max_fps;
 }
 
 // common ui widgets, move to the ui submodule later.
@@ -185,8 +199,6 @@ RED_ACTIVE   :: Vector4.{0.42, 0.10, 0.10, 1.0};
 GOLD_NORMAL  :: Vector4.{0.60, 0.50, 0.10, 0.9};
 GOLD_HOVER   :: Vector4.{0.75, 0.63, 0.15, 1.0};
 GOLD_ACTIVE  :: Vector4.{0.48, 0.40, 0.08, 1.0};
-
-// potentially move this into the other thing
 
 // a full-width colored button suitable for menus
 ui_menu_button :: (label: string, normal: Vector4, hover: Vector4, active: Vector4) -> bool {
@@ -299,7 +311,7 @@ draw_overlay_background :: (alpha: float32 = 0.75) {
 }
 
 
-// menu rendering useing a centered layout and colored buttons
+// menu rendering using a centered layout and colored buttons
 
 render_main_menu :: (using wp : *Windowed_Menu_Program) {
     content_y := draw_page_header(window_name);
@@ -340,52 +352,31 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
     push_centered_layout(400.0, content_y, 40.0, 10.0, 18.0);
 
     if resolution_labels.count > 0 {
-        ui_dropdown("Resolution", resolution_labels, *menu_resolution_selection);
+        ui_dropdown("Resolution", resolution_labels, *resolution_selection);
     }
 
     ui_spacing(4);
-    ui_checkbox("Fullscreen", *menu_fullscreen_checkbox);
+    ui_checkbox("Fullscreen", *desired_fullscreen);
 
     ui_spacing(4);
-    ui_checkbox("VSync", *menu_vsync_checkbox);
+    ui_checkbox("VSync", *desired_vsync);
 
     ui_spacing(4);
-    ui_slider_float("Max FPS", *menu_max_fps_float, 30.0, 512.0);
+    desired_max_fps_s32 := cast(s32) desired_max_fps;
+    if ui_slider_int("Max FPS", *desired_max_fps_s32, 30, 512) {
+        desired_max_fps = cast(u32) desired_max_fps_s32;
+    }
 
     ui_spacing(20);
 
     ui_begin_row();
 
     if ui_button_colored("Apply", GREEN_NORMAL, GREEN_HOVER, GREEN_ACTIVE) {
-        if menu_fullscreen_checkbox != fullscreen {
-            set_fullscreen(wp, menu_fullscreen_checkbox);
-        }
-
-        if menu_vsync_checkbox != vsync {
-            vsync = menu_vsync_checkbox;
-            set_vsync(vsync);
-        }
-
-        max_fps = cast(u32)(menu_max_fps_float + 0.5);
-        set_max_fps(wp, max_fps);
-
-        apply_resolution(wp);
+        apply_graphics_settings(wp);
     }
 
     if ui_button_colored("Save", GOLD_NORMAL, GOLD_HOVER, GOLD_ACTIVE) {
-        if menu_fullscreen_checkbox != fullscreen {
-            set_fullscreen(wp, menu_fullscreen_checkbox);
-        }
-
-        if menu_vsync_checkbox != vsync {
-            vsync = menu_vsync_checkbox;
-            set_vsync(vsync);
-        }
-
-        max_fps = cast(u32)(menu_max_fps_float + 0.5);
-        set_max_fps(wp, max_fps);
-
-        apply_resolution(wp);
+        apply_graphics_settings(wp);
         save_settings(wp);
     }
 
@@ -436,13 +427,25 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
 
     push_centered_layout(400.0, content_y, 40.0, 10.0, 18.0);
 
-    ui_label_disabled("No user settings available yet.");
+    ui_slider_float("Sensitivity", *sensitivity, 0.01, 2.0);
 
     ui_spacing(20);
+
+    ui_begin_row();
+
+    if ui_button_colored("Apply", GREEN_NORMAL, GREEN_HOVER, GREEN_ACTIVE) {
+        // sensitivity is synced to camera in Windowed_Program_3D per_frame_update
+    }
+
+    if ui_button_colored("Save", GOLD_NORMAL, GOLD_HOVER, GOLD_ACTIVE) {
+        save_settings(wp);
+    }
 
     if ui_button_colored("Back", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
         current_menu = menu_return_to;
     }
+
+    ui_end_row();
 
     pop_centered_layout();
 
@@ -482,7 +485,6 @@ render_in_game_menu :: (using wp : *Windowed_Menu_Program) {
 }
 
 render_menus :: (using wp : *Windowed_Menu_Program) {
-    // if we came from the in-game menu, always draw the dark overlay behind everything
     if menu_return_to == .IN_GAME || current_menu == .IN_GAME {
         draw_overlay_background(0.75);
     }
@@ -520,10 +522,11 @@ apply_sfx_volume :: (using wp: *Windowed_Menu_Program) {
 
 save_settings :: (using wp: *Windowed_Menu_Program) {
     set_float(*configuration, "audio", "volume", volume);
-    set_int(*configuration, "graphics", "resolution", menu_resolution_selection);
-    set_bool(*configuration, "graphics", "fullscreen", menu_fullscreen_checkbox);
-    set_bool(*configuration, "graphics", "vsync", menu_vsync_checkbox);
-    set_float(*configuration, "graphics", "max_fps", menu_max_fps_float);
+    set_int(*configuration, "graphics", "resolution", resolution_selection);
+    set_bool(*configuration, "graphics", "fullscreen", desired_fullscreen);
+    set_bool(*configuration, "graphics", "vsync", desired_vsync);
+    set_int(*configuration, "graphics", "max_fps", cast(int) desired_max_fps);
+    set_float(*configuration, "input", "sensitivity", sensitivity);
     save(*configuration);
 }
 
@@ -536,32 +539,29 @@ load_menu_settings :: (using wp: *Windowed_Menu_Program) {
 
     res_idx, ok_res := get_int(*configuration, "graphics", "resolution");
     if ok_res && res_idx >= 0 && res_idx < cast(int) available_resolutions.count {
-        menu_resolution_selection = cast(s32) res_idx;
+        resolution_selection = cast(s32) res_idx;
     }
 
     fs, ok_fs := get_bool(*configuration, "graphics", "fullscreen");
     if ok_fs {
-        menu_fullscreen_checkbox = fs;
-        if fs != fullscreen {
-            set_fullscreen(wp, fs);
-        }
+        desired_fullscreen = fs;
     }
 
     vs, ok_vs := get_bool(*configuration, "graphics", "vsync");
     if ok_vs {
-        menu_vsync_checkbox = vs;
-        if vs != vsync {
-            vsync = vs;
-            set_vsync(vsync);
-        }
+        desired_vsync = vs;
     }
 
-    fps, ok_fps := get_float(*configuration, "graphics", "max_fps");
-    if ok_fps && fps >= 30.0 && fps <= 512.0 {
-        menu_max_fps_float = fps;
-        max_fps = cast(u32)(fps + 0.5);
-        set_max_fps(wp, max_fps);
+    fps, ok_fps := get_int(*configuration, "graphics", "max_fps");
+    if ok_fps && fps >= 30 && fps <= 512 {
+        desired_max_fps = cast(u32) fps;
     }
 
-    apply_resolution(wp);
+    sens, ok_sens := get_float(*configuration, "input", "sensitivity");
+    if ok_sens && sens >= 0.01 && sens <= 2.0 {
+        sensitivity = sens;
+    }
+
+    // apply all loaded settings to the active state
+    apply_graphics_settings(wp);
 }

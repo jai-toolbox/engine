@@ -406,4 +406,9 @@ drain_ui_audio_events :: (using wp: *Windowed_Program) {
                 if sound_data play_sound(*sound_catalog, cast(u8) Engine_Sound_Type.SLIDER_CHANGE);
         }
     }
+
+    // flush newly started streams to the mixer immediately, the main Sound_Player.update
+    // already ran earlier this frame, so without this, sounds started during UI drain
+    // would sit unprocessed until next frame and may be dropped.
+    Sound_Player.update(0);
 }
