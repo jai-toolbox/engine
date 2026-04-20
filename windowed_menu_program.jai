@@ -2,8 +2,8 @@
 Input :: #import "Input";
 Simp :: #import "Simp";
 Sound_Player :: #import "Sound_Player";
-#scope_export
 
+// this is just a sample thing, you'll make your own probably.
 Current_Menu :: enum {
     MAIN;
     GRAPHICS_SETTINGS;
@@ -12,6 +12,8 @@ Current_Menu :: enum {
     IN_GAME;
     NONE;
 }
+
+#scope_export
 
 
 Resolution_Entry :: struct {
@@ -111,7 +113,7 @@ enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
     }
 }
 
-apply_resolution :: (using wp: *Windowed_Menu_Program) {
+apply_resolution :: (using wp: *Windowed_Menu_Program_Base) {
     #if OS == .WINDOWS {
         win32 :: #import "Windows";
 
@@ -144,7 +146,7 @@ apply_resolution :: (using wp: *Windowed_Menu_Program) {
     }
 }
 
-apply_graphics_settings :: (using wp: *Windowed_Menu_Program) {
+apply_graphics_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_fullscreen(wp, desired_fullscreen);
     set_vsync(desired_vsync);
     vsync = desired_vsync;
@@ -153,12 +155,10 @@ apply_graphics_settings :: (using wp: *Windowed_Menu_Program) {
     apply_resolution(wp);
 }
 
-
-Windowed_Menu_Program :: struct {
+// you can just "using" this in your own game if you want a basic thing that helps you 
+// build a menu for setting that most games are going to need anways
+Windowed_Menu_Program_Base :: struct {
     using #as base : Windowed_Program;
-
-    current_menu := Current_Menu.MAIN;
-    menu_return_to := Current_Menu.MAIN;
 
     // pending settings (what the UI edits, applied on "Apply")
     desired_fullscreen := false;
@@ -172,7 +172,28 @@ Windowed_Menu_Program :: struct {
     resolution_labels: [..] string;
 }
 
-init_menu_defaults :: (using wp: *Windowed_Menu_Program) {
+
+
+init_default_ui_sounds :: (wmpb : *Windowed_Menu_Program_Base) {
+    table_add(*sound_catalog, cast(u8) Engine_Sound_Type.BUTTON_CLICK, load_sound("data/sounds/ui/button_click.wav"));
+    table_add(*sound_catalog, cast(u8) Engine_Sound_Type.BUTTON_HOVER, load_sound("data/sounds/ui/button_hover.wav"));
+    table_add(*sound_catalog, cast(u8) Engine_Sound_Type.SLIDER_CHANGE, load_sound("data/sounds/ui/handle_tick.wav"));
+}
+
+
+// this is a specific implementation that we're providing to you to let you have one for free and see how we do stuff
+Windowed_Menu_Program :: struct {
+    using #as wmpg : Windowed_Menu_Program_Base;
+
+    current_menu := Current_Menu.MAIN;
+    menu_return_to := Current_Menu.MAIN;
+}
+
+
+init :: (using wmp : *Windowed_Menu_Program) {
+}
+
+init_menu_defaults :: (using wp: *Windowed_Menu_Program_Base) {
     desired_fullscreen = fullscreen;
     desired_vsync = vsync;
     desired_max_fps = max_fps;
@@ -311,7 +332,22 @@ draw_overlay_background :: (alpha: float32 = 0.75) {
 }
 
 
+// here is some sample rendering of a menu using the ui system, if you're making your own thing
+// and want to use the ui system, then you can literally just copy out these functions and then
+// replace Windowed_Menu_Program with whatever your thing is and make any tweaks you need.
+
 // menu rendering using a centered layout and colored buttons
+
+
+toggle_menu :: (using wp: *Windowed_Menu_Program) {
+    if current_menu == .NONE {
+        current_menu = .IN_GAME;
+        show_cursor(wp);
+    } else {
+        current_menu = .NONE;
+        hide_cursor(wp);
+    }
+}
 
 render_main_menu :: (using wp : *Windowed_Menu_Program) {
     content_y := draw_page_header(window_name);
@@ -504,23 +540,14 @@ render_menus :: (using wp : *Windowed_Menu_Program) {
 }
 
 
-toggle_menu :: (using wp: *Windowed_Menu_Program) {
-    if current_menu == .NONE {
-        current_menu = .IN_GAME;
-        show_cursor(wp);
-    } else {
-        current_menu = .NONE;
-        hide_cursor(wp);
-    }
-}
 
 
-apply_sfx_volume :: (using wp: *Windowed_Menu_Program) {
+apply_sfx_volume :: (using wp: *Windowed_Menu_Program_Base) {
     Sound_Player.mix_levels[Sound_Player.Sound_Category.GENERAL_SFX] = volume / 100.0;
     Sound_Player.mix_levels[Sound_Player.Sound_Category.UI]          = volume / 100.0;
 }
 
-save_settings :: (using wp: *Windowed_Menu_Program) {
+save_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_float(*configuration, "audio", "volume", volume);
     set_int(*configuration, "graphics", "resolution", resolution_selection);
     set_bool(*configuration, "graphics", "fullscreen", desired_fullscreen);

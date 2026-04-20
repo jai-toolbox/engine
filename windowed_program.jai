@@ -58,6 +58,7 @@ init :: (using wp: *Windowed_Program) {
     window = Window_Creation.create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
 
+
     init(*absolute_position_color_renderer);
 
     // initialize custom UI system
@@ -82,9 +83,17 @@ init :: (using wp: *Windowed_Program) {
 deinit :: (using wp: *Windowed_Program) {
     Sound_Player.sound_player_shutdown();
     deinit(*configuration);
+
+    // free sound_data internals before destroying the table
+    for * entry, key : sound_catalog {
+        free(entry.name.data);
+        free(entry.buffer.data);
+    }
+    deinit(*sound_catalog);
+
     if ui_initialized {
         ui_destroy(*ui_context);
-        msdf_font_destroy(*ui_font);
+        deinit(*ui_font);
     }
 }
 
@@ -185,6 +194,8 @@ per_frame_update :: (using wp: *Windowed_Program) {
     }
 
     set_aspect_ratio_uniform(wp);
+
+    Sound_Player.update(delta_time);
 }
 
 // begin the UI frame, call this after per_frame_update, before any ui_ widget calls
@@ -392,6 +403,7 @@ render_section_bar_graph :: (using wp: *Windowed_Program) {
 
 
 // drains UI audio events and plays sounds from the sound catalog. expects the catalog to have entries keyed by Engine_Sound_Type, though we can change this later
+// rename to drain ui audio events
 drain_ui_audio_events :: (using wp: *Windowed_Program) {
     for event : ui_drain_audio_events() {
         if event.type == {

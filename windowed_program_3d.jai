@@ -165,7 +165,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
     if movement_mode != .MANUAL camera.position += camera_velocity * delta_time;
 
     update_listener_orientation(camera.position, camera.yaw);
-    Sound_Player.update(delta_time);
+    // Sound_Player.update(delta_time);
 
     // handle 2d drag and scroll
     if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {
@@ -288,6 +288,38 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
     drain_ui_audio_events(*wp3.wp);
 
     Simp.swap_buffers(wp3.window, false);
+}
+
+clear_color :: (r: float, g: float, b: float, a: float) {
+    glClearColor(r, g, b, a);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+swap_buffers :: (window: Window_Creation.Window_Type, vsync := true) {  // @Incomplete: Have some more-sophisticated vsync flags.
+
+    #if OS == .WINDOWS {
+        dc := GetDC(window);
+        SwapBuffers(dc);
+    } else #if OS == .LINUX {
+        info := find_window_info(window);
+        if (!info) || !info.specific.glx_window {
+            log_error("Simp: Attempt to swap_buffers on a previously unseen window!\n");
+            return;
+        }
+
+        glXSwapBuffers(x_global_display, info.specific.glx_window);
+    } else #if OS == .MACOS {
+        // On macOS, OpenGL buffer swapping is done on the context, not on the view.
+        // So we can only swap for the active window. (And you need to swap before switching to another view).
+        assert(window == state.current_window_info.window);
+        NSOpenGLContext.flushBuffer(the_gl_context);
+    } else #if OS == .ANDROID {
+        // I think it's gonna make more sense for display and surface to be on the specific window info, then
+        // we will have to get the window here like Linux does.
+        eglSwapBuffers(the_egl_display, the_egl_surface);
+    } else {
+        assert(false);
+    }
 }
 
 sample_first_person_movement_input :: () -> First_Person_Movement_Input {
