@@ -1,5 +1,6 @@
 #scope_file
 Sound_Player :: #import "Sound_Player";
+#import "Thread";
 #scope_export
 
 #import "Hash_Table";
@@ -19,7 +20,7 @@ play_sound :: (data: *Sound_Player.Sound_Data, category := Sound_Player.Sound_Ca
 }
 
 play_spatial_sound :: (data: *Sound_Player.Sound_Data, position: Vector3, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
-    stream := make_stream(data, category);
+    stream := Sound_Player.make_stream(data, category);
     stream.user_volume_scale = volume;
     stream.user_flags |= .SPATIALIZED;
     stream.position = position;
@@ -32,13 +33,13 @@ play_spatial_sound :: (data: *Sound_Player.Sound_Data, position: Vector3, catego
 play_sound_looping :: (data: *Sound_Player.Sound_Data, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
     stream := Sound_Player.make_stream(data, category);
     stream.user_volume_scale = volume;
-    set_repeating(stream, true);
-    start_playing(stream);
+    Sound_Player.set_repeating(stream, true);
+    Sound_Player.start_playing(stream);
     return stream;
 }
 
 play_spatial_sound_looping :: (data: *Sound_Player.Sound_Data, position: Vector3, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
-    stream := make_stream(data, category);
+    stream := Sound_Player.make_stream(data, category);
     stream.user_volume_scale = volume;
     stream.user_flags |= .SPATIALIZED;
     stream.position = position;
@@ -63,8 +64,8 @@ play_spatial_sound :: (sc : *Table(u8, Sound_Player.Sound_Data), sound_type : u8
     return play_spatial_sound(sound_data, position, category, volume);
 }
 
-play_sound_looping :: (using sc: *Table(u8, Sound_Player.Sound_Data), sound_type: u8, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
-    sound_data := table_find_pointer(*sound_type_to_data, sound_type);
+play_sound_looping :: (using sound_catalog: *Table(u8, Sound_Player.Sound_Data), sound_type: u8, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
+    sound_data := table_find_pointer(sound_catalog, sound_type);
     if !sound_data return null;
     return play_sound_looping(sound_data, category, volume);
 }
