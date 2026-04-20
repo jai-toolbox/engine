@@ -4,19 +4,12 @@ Sound_Player :: #import "Sound_Player";
 
 #import "Hash_Table";
 
-// ============================================================
-// Loading
-// ============================================================
-
 load_sound :: (path : string) -> Sound_Player.Sound_Data {
     data := Sound_Player.load_audio_file(path);
     if !data.loaded exit(1);
     return data;
 }
 
-// ============================================================
-// Direct playback (from Sound_Data pointer)
-// ============================================================
 
 play_sound :: (data: *Sound_Player.Sound_Data, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
     stream := Sound_Player.make_stream(data, category);
@@ -56,9 +49,7 @@ play_spatial_sound_looping :: (data: *Sound_Player.Sound_Data, position: Vector3
     return stream;
 }
 
-// ============================================================
-// Catalog playback (from Table(u8, Sound_Data) + sound type)
-// ============================================================
+// catalog playback (from table(u8, sound_data) + sound type)
 
 play_sound :: (sc : *Table(u8, Sound_Player.Sound_Data), sound_type : u8, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
     sound_data := table_find_pointer(sc, sound_type);
@@ -84,9 +75,6 @@ play_spatial_sound_looping :: (using sc: *Table(u8, Sound_Player.Sound_Data), so
     return play_spatial_sound_looping(sound_data, position, category, volume);
 }
 
-// ============================================================
-// Stopping
-// ============================================================
 
 stop_sound :: (stream: **Sound_Player.Sound_Stream) {
     if stream.* == null return;
@@ -94,4 +82,21 @@ stop_sound :: (stream: **Sound_Player.Sound_Stream) {
     stream.*.internal_flags |= .FADING_OUT;
     unlock(*Sound_Player.sound_mutex);
     stream.* = null;
+}
+
+
+update_listener_orientation :: (position: Vector3, yaw: float) {
+    yaw_quat: Quaternion;
+    set_from_axis_and_angle(*yaw_quat, 0, 0, 1, -yaw);
+
+    rotation_y: Quaternion;
+    set_from_axis_and_angle(*rotation_y, 0, 1, 0, PI/2);
+
+    rotation_z: Quaternion;
+    set_from_axis_and_angle(*rotation_z, 0, 0, 1, PI/2);
+
+    correction_quat := rotation_z * rotation_y;
+    listener_orientation := yaw_quat * correction_quat;
+
+    Sound_Player.update_listener(position, listener_orientation);
 }
