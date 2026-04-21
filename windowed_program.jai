@@ -82,14 +82,44 @@ init :: (using wp: *Windowed_Program) {
 
 deinit :: (using wp: *Windowed_Program) {
     Sound_Player.sound_player_shutdown();
-    deinit(*configuration);
 
-    // free sound_data internals before destroying the table
+    // Each Sound_Data owns up to three allocations:
+    //    name.data         filename string, allocated by copy_string() in load_audio_data
+    //    buffer.data       raw file bytes, allocated by read_entire_file() in load_audio_file
+    //    samples           PCM sample pointer, which depends on the sound type:
+    //
+    // For LINEAR_SAMPLE_ARRAY (uncompressed WAV):
+    //   - If the WAV was already 16-bit 44100Hz, samples points INTO buffer (past the WAV
+    //     header). It's not a separate allocation — freeing buffer.data covers it.
+    //   - If the WAV needed resampling (different bit depth or sample rate), load_audio_data
+    //     allocates a separate converted buffer and points samples at that. This IS a separate
+    //     allocation that must be freed independently.
+    //   We distinguish these two cases by checking whether samples points inside the buffer
+    //   range or outside it.
+    //
+    // For OGG_COMPRESSED: samples is null. The decoder manages its own decompressed pages,
+    //   and sound_player_shutdown() already cleaned those up.
+    //
+    // For ADPCM_COMPRESSED: samples points into buffer, same as native WAV. No separate free.
+   
     for * entry, key : sound_catalog {
-        free(entry.name.data);
-        free(entry.buffer.data);
+        if entry.type == .LINEAR_SAMPLE_ARRAY {
+            samples_ptr := cast(*void) entry.samples;
+            buffer_start := entry.buffer.data;
+            buffer_end := entry.buffer.data + entry.buffer.count;
+
+            samples_is_inside_buffer := samples_ptr >= buffer_start && samples_ptr < buffer_end;
+
+            if !samples_is_inside_buffer && entry.samples != null {
+                free(entry.samples);
+            }
+        }
+        if entry.name.count > 0  free(entry.name.data);
+        if entry.buffer.count > 0  free(entry.buffer.data);
     }
     deinit(*sound_catalog);
+
+    deinit(*configuration);
 
     if ui_initialized {
         ui_destroy(*ui_context);

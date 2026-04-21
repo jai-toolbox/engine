@@ -17,6 +17,7 @@ Eventually you'll want to to do something that doesn't exist in the castle, and 
 // Sound_Player :: #import "Sound_Player";
 // Simp :: #import "Simp";
 // Input :: #import "Input";
+Network :: #import "tbx/network";
 #scope_export
 
 
@@ -63,6 +64,34 @@ create_packet :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
     packet := packet_create(memory, size_when_serialized, packet_flags);
     return packet;
 }
+
+
+attempt_to_connect_to_peer :: (host: *Network.Host, ip_address : string, port : u16) -> *Network.Peer, bool {
+    peer_we_are_connecting_to : *Network.Peer;
+    connected := false;
+
+    address := Network.get_host_ip_address(ip_address);
+    address.port = port;
+
+    peer_we_are_connecting_to = Network.host_request_connect(host, *address, 3, 5);
+
+    event: Network.Event;
+
+    // during the time we wait for the connect packet, we stop caring about all other incoming packets, this 
+    // may lead to other issues if there were other important packets during this time, but I'm assuming that's not the case.
+    connection_timer := Timer.{duration_sec = 3};
+    start(*connection_timer);
+    while !(time_up(*connection_timer) || connected) {
+        if Network.host_service(host, *event, 100) > 0 {
+            if event.type == .CONNECT {
+                connected = true;
+            }
+        }
+    }
+
+    return peer_we_are_connecting_to, connected;
+}
+
 
 
 #import "tbx/networked_interpolator";
