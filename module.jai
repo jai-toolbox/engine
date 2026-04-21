@@ -56,7 +56,7 @@ format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
 #import "tbx/serialize";
 
 // the packet is allocated on temporary storage, because packets get sent out soon.
-packet_create :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
+create_packet :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
     size_when_serialized := size_when_serialized_with_type_first(t);
     memory : *void = temporary_alloc(size_when_serialized);
     serialize_with_type_first(memory, t);
