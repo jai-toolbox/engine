@@ -18,7 +18,8 @@ Windowed_Program :: struct {
     window : Window_Creation.Window_Type;
     saved_window_info : Window_Creation.Saved_Window_Info;
 
-    absolute_position_color_renderer : Absolute_Position_Color_Renderer;
+    // this is included because it's almost always useful to render things with this
+    absolute_position_color_alpha_renderer : Absolute_Position_Color_Alpha_Renderer;
     performance_graph: Performance_Graph;
 
     window_name : string = "";
@@ -59,7 +60,7 @@ init :: (using wp: *Windowed_Program) {
     Simp.set_render_target(window);
 
 
-    init(*absolute_position_color_renderer);
+    init(*absolute_position_color_alpha_renderer);
 
     // initialize custom UI system
     #import "stb_image";
@@ -76,44 +77,14 @@ init :: (using wp: *Windowed_Program) {
         print("Failed to initialize sound player!\n");
     }
 
-    configuration.config_path = "data/engine.cfg";
+    configuration.config_path = "data/cfg.ini";
     init(*configuration);
 }
 
 deinit :: (using wp: *Windowed_Program) {
     Sound_Player.sound_player_shutdown();
 
-    // Each Sound_Data owns up to three allocations:
-    //    name.data         filename string, allocated by copy_string() in load_audio_data
-    //    buffer.data       raw file bytes, allocated by read_entire_file() in load_audio_file
-    //    samples           PCM sample pointer, which depends on the sound type:
-    //
-    // For LINEAR_SAMPLE_ARRAY (uncompressed WAV):
-    //   - If the WAV was already 16-bit 44100Hz, samples points INTO buffer (past the WAV
-    //     header). It's not a separate allocation — freeing buffer.data covers it.
-    //   - If the WAV needed resampling (different bit depth or sample rate), load_audio_data
-    //     allocates a separate converted buffer and points samples at that. This IS a separate
-    //     allocation that must be freed independently.
-    //   We distinguish these two cases by checking whether samples points inside the buffer
-    //   range or outside it.
-    //
-    // For OGG_COMPRESSED: samples is null. The decoder manages its own decompressed pages,
-    //   and sound_player_shutdown() already cleaned those up.
-    //
-    // For ADPCM_COMPRESSED: samples points into buffer, same as native WAV. No separate free.
-   
     for * entry, key : sound_catalog {
-        if entry.type == .LINEAR_SAMPLE_ARRAY {
-            samples_ptr := cast(*void) entry.samples;
-            buffer_start := entry.buffer.data;
-            buffer_end := entry.buffer.data + entry.buffer.count;
-
-            samples_is_inside_buffer := samples_ptr >= buffer_start && samples_ptr < buffer_end;
-
-            if !samples_is_inside_buffer && entry.samples != null {
-                free(entry.samples);
-            }
-        }
         if entry.name.count > 0  free(entry.name.data);
         if entry.buffer.count > 0  free(entry.buffer.data);
     }
@@ -140,8 +111,8 @@ get_window_dimensions_vector :: (using wp : *Windowed_Program) -> Vector2 {
 }
 
 set_aspect_ratio_uniform :: (using wp : *Windowed_Program) {
-    set_active_program(absolute_position_color_renderer);
-    set_aspect_ratio_uniform(*absolute_position_color_renderer, get_window_dimensions_vector(wp));
+    set_active_program(absolute_position_color_alpha_renderer);
+    set_aspect_ratio_uniform(*absolute_position_color_alpha_renderer, get_window_dimensions_vector(wp));
     clear_active_program();
 }
 
@@ -213,6 +184,8 @@ per_frame_update :: (using wp: *Windowed_Program) {
     }
 
     for Input.get_window_resizes() {
+        // this resizes the viewport and does other stuff, I'm keeping this because 
+        // im not sure about the other stuff and if I need to keep doing it
         Simp.update_window(it.window);
         if it.window == window {
             resolution_has_changed := (it.width != window_width) || (it.height != window_height);
@@ -409,7 +382,7 @@ render_performance_graph :: (using wp: *Windowed_Program) {
         max_ms = performance_graph.graph_max_ms,
         target_ms = min_frame_time * 1000
     );
-    immediate_render(*wp.absolute_position_color_renderer, graph_renderable);
+    immediate_render(*wp.absolute_position_color_alpha_renderer, graph_renderable);
 }
 
 
@@ -428,7 +401,7 @@ render_section_bar_graph :: (using wp: *Windowed_Program) {
         target_ms = min_frame_time * 1000,
         print_legend = should_print
     );
-    immediate_render(*wp.absolute_position_color_renderer, bar_renderable);
+    immediate_render(*wp.absolute_position_color_alpha_renderer, bar_renderable);
 }
 
 

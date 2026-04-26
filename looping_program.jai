@@ -1,5 +1,3 @@
-
-
 /*
 
 Doesn't use dynamic memory by default and doesn't need to be deinitialized. 
@@ -7,6 +5,7 @@ This might not be true if you make the pool (inside section timer) on the heap o
 
 */
 Looping_Program :: struct {
+
     end_program := false; // loop on this condition
 
     max_fps : u32 = 144;

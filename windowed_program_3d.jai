@@ -290,11 +290,6 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
     Simp.swap_buffers(wp3.window, false);
 }
 
-clear_color :: (r: float, g: float, b: float, a: float) {
-    glClearColor(r, g, b, a);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
-
 swap_buffers :: (window: Window_Creation.Window_Type, vsync := true) {  // @Incomplete: Have some more-sophisticated vsync flags.
 
     #if OS == .WINDOWS {

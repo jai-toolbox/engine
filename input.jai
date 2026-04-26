@@ -2,27 +2,27 @@
 Input :: #import "Input";
 #scope_export
 
-key_pressed :: inline (key : Input.Key_Code) -> bool #must {
+key_pressed :: inline (key : Input.Key_Code) -> bool {
     return (Input.input_button_states[cast (s64) key] & .DOWN) != 0;
 }
 
-key_just_pressed :: inline (key : Input.Key_Code) -> bool #must {
+key_just_pressed :: inline (key : Input.Key_Code) -> bool {
     return (Input.input_button_states[cast (s64) key] & .START) != 0;
 }
 
-right_mouse_just_pressed :: () -> bool #must {
+right_mouse_just_pressed :: () -> bool {
     return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .START != 0;
 }
 
-left_mouse_just_pressed :: () -> bool #must {
+left_mouse_just_pressed :: () -> bool {
     return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT] & .START != 0;
 }
 
-left_mouse_pressed :: () -> bool #must {
+left_mouse_pressed :: () -> bool {
     return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT] & .DOWN != 0;
 }
 
-right_mouse_pressed :: () -> bool #must {
+right_mouse_pressed :: () -> bool {
     return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .DOWN != 0;
 }
 

@@ -8,8 +8,8 @@ And so you can start focusing on making a game or something immediately, which i
 Eventually you'll want to to do something that doesn't exist in the castle, and then you can start moving away from it. Either way here is the highest level of support we currently give:
 */
 
-#import "Math";
 #import "Basic";
+#import "Math";
 #import "GL";
 
 #scope_file
@@ -21,14 +21,14 @@ Network :: #import "tbx/network";
 #scope_export
 
 
+#import "tbx/configuration";
+#import "tbx/rectangle";
+#import "tbx/movement";
+#import "tbx/geometry";
 #import "tbx/opengl";
 #import "tbx/camera";
-#import "tbx/movement";
-#import "tbx/rectangle";
-#import "tbx/configuration";
 #import "tbx/time";
 #import "tbx/math";
-#import "tbx/geometry";
 #import "tbx/ui";
 
 
@@ -53,8 +53,8 @@ format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
 // The reason this is here is that it doesn't belong in the network or the serialization modules
 // it needs to be somwehere, so maybe making the engine be the place where we combine them is a good thing.
 
-#import "tbx/network";
 #import "tbx/serialize";
+#import "tbx/network";
 
 // the packet is allocated on temporary storage, because packets get sent out soon.
 create_packet :: (t: $T, packet_flags : Packet_Flags) -> *Packet {
@@ -73,7 +73,7 @@ attempt_to_connect_to_peer :: (host: *Network.Host, ip_address : string, port : 
     address := Network.get_host_ip_address(ip_address);
     address.port = port;
 
-    peer_we_are_connecting_to = Network.host_request_connect(host, *address, 3, 5);
+    peer_we_are_connecting_to = Network.host_request_connect(host, address, 3, 5);
 
     event: Network.Event;
 
@@ -84,6 +84,7 @@ attempt_to_connect_to_peer :: (host: *Network.Host, ip_address : string, port : 
     while !(time_up(*connection_timer) || connected) {
         if Network.host_service(host, *event, 100) > 0 {
             if event.type == .CONNECT {
+                log("just connected to server, id: %", event.peer.connect_id);
                 connected = true;
             }
         }

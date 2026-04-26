@@ -131,7 +131,7 @@ apply_resolution :: (using wp: *Windowed_Menu_Program_Base) {
                     rect.top    = 0;
                     rect.right  = new_w;
                     rect.bottom = new_h;
-                    win32.AdjustWindowRectEx(*rect, cast(u32) style, 0, ex_style);
+                    win32.AdjustWindowRectEx(*rect, cast(u32) style, 0, xx ex_style);
 
                     adjusted_w := rect.right - rect.left;
                     adjusted_h := rect.bottom - rect.top;
@@ -261,7 +261,7 @@ ui_section_header :: (label: string) {
 // horizontally centered text at a given y position
 ui_centered_text :: (text: string, y: float32, size: float32, color: Vector4) {
     ctx := ui_ctx;
-    w := msdf_measure_text(ctx.font, text, size);
+    w := msdf_measure_text_pixels(ctx.font, text, size);
     ui_cmd_text(text, (ctx.window_w - w) * 0.5, y, size, color);
 }
 
