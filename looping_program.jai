@@ -88,7 +88,7 @@ sleep_to_maintain_max_fps :: (using lp: *Looping_Program) {
     }
 }
 
-// must be called at end of frame for delta_time to be correct
+// must be called at end of frame for delta_time to be correct, you should call it after you sleep or else delta time will be too small.
 mark_frame_end :: (using lp: *Looping_Program) {
     reset_temporary_storage();
     frame_end := current_time_monotonic();
