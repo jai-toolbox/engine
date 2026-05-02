@@ -97,76 +97,89 @@ attempt_to_connect_to_peer :: (host: *Network.Host, ip_address : string, port : 
 
 #import "tbx/networked_interpolator";
 
+mode_color_map :: (m: NPSQ_Mode) -> Vector4 {
+    if m == .REGULAR_OPERATION       return .{0.30, 0.75, 0.40, 0.85};
+    if m == .POPULATE_INPUT_BUFFER   return .{0.85, 0.55, 0.20, 0.85};
+    return .{0.5, 0.5, 0.5, 0.85};
+}
+
+emission_color_map :: (e: NPSQ_Emit_Type) -> Vector4 {
+    if e == .NOT_READY  return .{0.20, 0.20, 0.25, 0.85};
+    if e == .VALUE      return .{0.30, 0.80, 0.40, 0.85};
+    if e == .EMPTY      return .{0.90, 0.30, 0.30, 0.85};
+    return .{0.5, 0.5, 0.5, 0.85};
+}
+
 render_npsq_monitor_graphs :: (
-    renderer: *Absolute_Position_Color_Renderer,
-    npsq: *Networked_Periodic_Signal_Quantizer($T, $MONITOR),
+    renderer: *Absolute_Position_Color_Alpha_Renderer,
+    npsq: *Networked_Periodic_Signal_Quantizer($T),
     origin_x: float = -0.95,
     origin_y: float = -0.95,
     graph_width: float = 0.4,
     graph_height: float = 0.1,
     gap: float = 0.02
 ) {
-    #if !MONITOR {
-        return;
-    } else {
-        push_allocator(temp);
+    push_allocator(temp);
 
-        y := origin_y;
+    y := origin_y;
 
-        {
-            ref_lines: [2] float;
-            ref_lines[0] = cast(float) npsq.target_num_states;
-            ref_lines[1] = cast(float) npsq.max_num_states;
+    // input buffer size with reference lines for target and upper bound
+    {
+        ref_lines: [2] float;
+        ref_lines[0] = cast(float) npsq.target_buffer_size;
+        ref_lines[1] = cast(float) npsq.buffer_upper_bound;
 
-            ref_slice: [] float;
-            ref_slice.data = ref_lines.data;
-            ref_slice.count = 2;
+        ref_slice: [] float;
+        ref_slice.data = ref_lines.data;
+        ref_slice.count = 2;
 
-            graph := create_time_series_graph(
-                *npsq.buffer_occupancy_history,
-                .{origin_x, y},
-                .{graph_width, graph_height},
-                min_val = 0.0,
-                max_val = cast(float) npsq.max_num_states + 1.0,
-                color = .{0.3, 0.6, 0.9},
-                reference_lines = ref_slice
-            );
-            immediate_render(renderer, graph);
-            y += graph_height + gap;
-        }
+        graph := create_time_series_graph(
+            *npsq.input_buffer_size_history,
+            .{origin_x, y},
+            .{graph_width, graph_height},
+            min_val = 0.0,
+            max_val = cast(float) npsq.buffer_upper_bound + 1.0,
+            color = .{0.90, 0.60, 0.90, 0.95},
+            reference_lines = ref_slice
+        );
+        immediate_render(renderer, graph);
+        y += graph_height + gap;
+    }
 
-        {
-            graph := create_colored_timeline_strip(
-                *npsq.mode_history,
-                .{origin_x, y},
-                .{graph_width, graph_height}
-            );
-            immediate_render(renderer, graph);
-            y += graph_height + gap;
-        }
+    // mode timeline
+    {
+        graph := create_colored_timeline_strip(
+            *npsq.mode_history,
+            .{origin_x, y},
+            .{graph_width, graph_height},
+            color_map_func = mode_color_map
+        );
+        immediate_render(renderer, graph);
+        y += graph_height + gap;
+    }
 
-        {
-            graph := create_colored_timeline_strip(
-                *npsq.emit_result_history,
-                .{origin_x, y},
-                .{graph_width, graph_height}
-            );
-            immediate_render(renderer, graph);
-            y += graph_height + gap;
-        }
+    // emission outcome timeline
+    {
+        graph := create_colored_timeline_strip(
+            *npsq.emission_history,
+            .{origin_x, y},
+            .{graph_width, graph_height},
+            color_map_func = emission_color_map
+        );
+        immediate_render(renderer, graph);
+        y += graph_height + gap;
+    }
 
-        {
-            graph := create_time_series_graph(
-                *npsq.removal_count_history,
-                .{origin_x, y},
-                .{graph_width, graph_height},
-                min_val = 0.0,
-                max_val = cast(float) npsq.max_num_states,
-                color = .{0.9, 0.6, 0.2}
-            );
-            immediate_render(renderer, graph);
-        }
+    // overflow pressure
+    {
+        graph := create_time_series_graph(
+            *npsq.overflow_history,
+            .{origin_x, y},
+            .{graph_width, graph_height},
+            min_val = 0.0,
+            max_val = cast(float) npsq.buffer_upper_bound,
+            color = .{0.90, 0.60, 0.20, 0.95}
+        );
+        immediate_render(renderer, graph);
     }
 }
-
-
