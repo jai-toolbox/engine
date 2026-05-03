@@ -68,11 +68,12 @@ set_max_fps :: (using lp: *Looping_Program, new_max_fps: u32) {
     min_frame_time = 1.0 / max_fps;
 }
 
-init :: (using lp: *Looping_Program) {
-    min_frame_time = 1.0 / max_fps;
-    delta_time = min_frame_time;
+init :: (lp: *Looping_Program, max_fps : u32) {
+    lp.max_fps = max_fps;
+    lp.min_frame_time = 1.0 / max_fps;
+    lp.delta_time = lp.min_frame_time; // an initial value, is this even required?
 
-    install_shutdown_signal_handler(*end_program);
+    install_shutdown_signal_handler(*lp.end_program);
 }
 
 // must be called at start of frame for delta_time to be correct
