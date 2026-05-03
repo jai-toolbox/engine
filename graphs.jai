@@ -282,23 +282,23 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
 #import "tbx/circular_array";
 
 create_time_series_graph :: (
-    history: *Circular_Array(float, $N),
+    history: *Circular_Array($V, $N),
     graph_origin: Vector2,
     graph_size: Vector2,
     min_val: float,
     max_val: float,
-    color: Vector3 = .{0.2, 0.8, 0.3},
+    color: Vector4 = .{0.2, 0.8, 0.3, 1.0},
     reference_lines: [] float = .[]
-) -> Indexed_Triangle_Positions_Colors {
+) -> Indexed_Triangle_Positions_Color_Alphas {
 
-    itpc: Indexed_Triangle_Positions_Colors;
+    itpca: Indexed_Triangle_Positions_Color_Alphas;
 
     range_val := max_val - min_val;
     if range_val <= 0 range_val = 1.0;
 
-    merge(*itpc, create_itpc_with_color(
-        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
-        .{0.1, 0.1, 0.1}));
+    // background, slightly translucent so overlapping graphs don't fully occlude
+    bg_quad := create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02);
+    merge(*itpca, create_itpca_with_color_alpha(bg_quad, .{0.08, 0.08, 0.08, 0.85}));
 
     count := history.count;
     if count >= 2 {
@@ -308,7 +308,7 @@ create_time_series_graph :: (
         idx := history.tail;
         for i: 0..count-1 {
             x_norm := cast(float) i / cast(float) max(count - 1, 1);
-            val := history.data[idx];
+            val := cast(float) history.data[idx];
             y_norm := clamp((val - min_val) / range_val, 0.0, 1.0);
 
             points[point_count] = .{x_norm, y_norm};
@@ -322,8 +322,7 @@ create_time_series_graph :: (
         points_slice.count = point_count;
 
         graph_itp := create_graph(points_slice, graph_origin, graph_size);
-        graph_itpc := create_itpc_with_color(graph_itp, color);
-        merge(*itpc, graph_itpc);
+        merge(*itpca, create_itpca_with_color_alpha(graph_itp, color));
     }
 
     line_half_height := graph_size.y * 0.008;
@@ -332,30 +331,28 @@ create_time_series_graph :: (
         y_norm := (ref_val - min_val) / range_val;
         if y_norm >= 0.0 && y_norm <= 1.0 {
             y := graph_origin.y + y_norm * graph_size.y;
-            merge(*itpc, create_itpc_with_color(
-                create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, -0.01),
-                .{1.0, 1.0, 1.0}));
+            ref_quad := create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, -0.01);
+            merge(*itpca, create_itpca_with_color_alpha(ref_quad, .{1.0, 1.0, 1.0, 0.85}));
         }
     }
 
-    return itpc;
+    return itpca;
 }
 
 create_colored_timeline_strip :: (
-    history: *Circular_Array(float, $N),
+    history: *Circular_Array($V, $N),
     graph_origin: Vector2,
     graph_size: Vector2,
-    color_map_func: (float) -> Vector3 = null
-) -> Indexed_Triangle_Positions_Colors {
+    color_map_func: (V) -> Vector4 = null
+) -> Indexed_Triangle_Positions_Color_Alphas {
 
-    itpc: Indexed_Triangle_Positions_Colors;
+    itpca: Indexed_Triangle_Positions_Color_Alphas;
 
-    merge(*itpc, create_itpc_with_color(
-        create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
-        .{0.1, 0.1, 0.1}));
+    bg_quad := create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02);
+    merge(*itpca, create_itpca_with_color_alpha(bg_quad, .{0.08, 0.08, 0.08, 0.85}));
 
     count := history.count;
-    if count == 0 return itpc;
+    if count == 0 return itpca;
 
     bar_width := graph_size.x / cast(float) count;
 
@@ -363,27 +360,47 @@ create_colored_timeline_strip :: (
     for i: 0..count-1 {
         val := history.data[idx];
 
-        color: Vector3;
+        color: Vector4;
         if color_map_func != null {
             color = color_map_func(val);
         } else {
-            color = default_binary_color_map(val);
+            color = default_color_map(val);
         }
 
         x0 := graph_origin.x + cast(float) i * bar_width;
         x1 := x0 + bar_width;
 
-        merge(*itpc, create_itpc_with_color(
-            create_quad(x0, graph_origin.y, x1, graph_origin.y + graph_size.y, -0.01),
-            color));
+        bar_quad := create_quad(x0, graph_origin.y, x1, graph_origin.y + graph_size.y, -0.01);
+        merge(*itpca, create_itpca_with_color_alpha(bar_quad, color));
 
         idx = (idx + 1) % N;
     }
 
-    return itpc;
+    return itpca;
 }
 
-default_binary_color_map :: (val: float) -> Vector3 {
-    if val > 0.5 return .{0.2, 0.8, 0.2};
-    return .{0.8, 0.2, 0.2};
+default_color_map :: (val: $V) -> Vector4 {
+    #if V == float || V == float64 {
+        if val > 0.5 return .{0.2, 0.8, 0.2, 1.0};
+        return .{0.8, 0.2, 0.2, 1.0};
+    } else {
+        idx := cast(int) val;
+        return enum_palette_color(idx);
+    }
+}
+
+ENUM_PALETTE :: Vector4.[
+    .{0.30, 0.65, 0.95, 1.0},
+    .{0.95, 0.45, 0.30, 1.0},
+    .{0.40, 0.85, 0.40, 1.0},
+    .{0.90, 0.85, 0.30, 1.0},
+    .{0.75, 0.40, 0.85, 1.0},
+    .{0.85, 0.30, 0.55, 1.0},
+    .{0.40, 0.85, 0.85, 1.0},
+    .{0.65, 0.65, 0.65, 1.0},
+];
+
+enum_palette_color :: (idx: int) -> Vector4 {
+    if idx < 0 return .{0.5, 0.5, 0.5, 1.0};
+    return ENUM_PALETTE[idx % ENUM_PALETTE.count];
 }
