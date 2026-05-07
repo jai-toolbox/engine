@@ -59,7 +59,6 @@ init :: (using wp: *Windowed_Program) {
     window = Window_Creation.create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
 
-
     init(*absolute_position_color_alpha_renderer);
 
     // initialize custom UI system

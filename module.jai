@@ -50,6 +50,25 @@ format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
 }
 
 
+world_to_screen :: (world_pos: Vector3, camera: *Camera, window_w: float32, window_h: float32) -> Vector2, bool {
+    view       := get_world_to_camera_matrix(camera);
+    proj       := get_projection_matrix(camera, xx window_w, xx window_h);
+    view_proj  := multiply(proj, view);
+
+    p := Vector4.{world_pos.x, world_pos.y, world_pos.z, 1.0};
+    clip := multiply(view_proj, p);
+
+    if clip.w <= 0 return .{}, false;
+
+    ndc := Vector3.{clip.x / clip.w, clip.y / clip.w, clip.z / clip.w};
+    screen := Vector2.{
+        (ndc.x * 0.5 + 0.5) * window_w,
+        (1.0 - (ndc.y * 0.5 + 0.5)) * window_h,  // flip Y
+    };
+    return screen, true;
+}
+
+
 // The reason this is here is that it doesn't belong in the network or the serialization modules
 // it needs to be somwehere, so maybe making the engine be the place where we combine them is a good thing.
 

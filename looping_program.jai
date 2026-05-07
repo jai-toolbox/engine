@@ -72,6 +72,8 @@ init :: (using lp: *Looping_Program) {
     min_frame_time = 1.0 / max_fps;
     delta_time = min_frame_time;
 
+    // todo init section timer?
+
     install_shutdown_signal_handler(*end_program);
 }
 
