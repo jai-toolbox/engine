@@ -68,7 +68,7 @@ set_max_fps :: (using lp: *Looping_Program, new_max_fps: u32) {
     min_frame_time = 1.0 / max_fps;
 }
 
-init :: (lp: *Looping_Program, max_fps : u32) {
+init :: (lp: *Looping_Program, max_fps : u32 = 144) {
     lp.max_fps = max_fps;
     lp.min_frame_time = 1.0 / max_fps;
     lp.delta_time = lp.min_frame_time; // an initial value, is this even required?
