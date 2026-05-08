@@ -26,6 +26,14 @@ right_mouse_pressed :: () -> bool {
     return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .DOWN != 0;
 }
 
+middle_mouse_just_pressed :: () -> bool {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_MIDDLE] & .START != 0;
+}
+
+middle_mouse_pressed :: () -> bool {
+    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_MIDDLE] & .DOWN != 0;
+}
+
 set_mouse_pointer_position :: inline (x : int, y : int) {
     #if OS == .WINDOWS {
         user32 :: #system_library "User32";

@@ -27,6 +27,8 @@ STANDARD_ORIENTATION :: #run Orientation.{X3, -Y3, Z3};
 GL_ORIENTATION :: Orientation.{Z3, X3, Y3};
 NEGATIVE_Z_GL_ORIENTATION :: #run Orientation.{-Z3, X3, Y3};
 
+// it might be nice to make a dedicated 2d program.
+
 Windowed_Program_3D :: struct {
 
     using #as wp : Windowed_Menu_Program;
@@ -60,7 +62,6 @@ Windowed_Program_3D :: struct {
 init :: (using wp3 : *Windowed_Program_3D) {
     init(*wp);
     init(*camera_per_object_transform_color_renderer);
-    init(*absolute_position_color_renderer);
     init_section_timer(*section_timer);
 
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
@@ -138,13 +139,6 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     vx, vy, vw, vh := Window_Creation.get_dimensions(window, right_handed_mouse_position);
 
-    if camera_mode == {
-        case .FIRST_PERSON;
-            update_matrices(*camera, vw, vh);
-        case .THIRD_PERSON;
-            update_matrices_third_person(*camera, vw, vh);
-    }
-
     if camera_mode != .TWO_DIMENSIONS && want_cursor_captured {
         if movement_mode == {
             case .GOD;
@@ -208,13 +202,13 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
         }
     }
 
-    glUseProgram(absolute_position_color_renderer.shader_program_gl_handle);
+    glUseProgram(absolute_position_color_alpha_renderer.shader_program_gl_handle);
 
     glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
     if camera_mode != .TWO_DIMENSIONS {
-        set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, camera.world_to_camera);
-        set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, camera.camera_to_clip);
+        set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, get_world_to_camera_matrix(*camera));
+        set_camera_to_clip_uniform(*camera_per_object_transform_color_renderer, get_projection_matrix(*camera, window_width, window_height));
     } else {
         world_to_camera := Matrix4_Identity;
         set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, world_to_camera);
@@ -269,7 +263,6 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
             ui_end_window();
         }
 
-        // performance graphs still use the absolute_position_color_renderer
         update_graph_visual(*wp3.performance_graph);
         render_performance_graph(wp3);
         render_section_bar_graph(wp3);

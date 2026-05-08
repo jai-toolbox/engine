@@ -36,6 +36,7 @@ Network :: #import "tbx/network";
 #load "input.jai";
 #load "looping_program.jai";
 #load "windowed_program.jai";
+#load "windowed_program_2d.jai";
 #load "windowed_program_3d.jai";
 #load "windowed_menu_program.jai";
 #load "graphs.jai";

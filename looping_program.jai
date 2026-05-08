@@ -3,7 +3,29 @@
 Doesn't use dynamic memory by default and doesn't need to be deinitialized. 
 This might not be true if you make the pool (inside section timer) on the heap or something if you need more space.
 
+usage:
+
+
+
+main :: () {
+    lp : Looping_Program;
+    init(*lp); defer deinit(*lp);
+
+    while !lp.end_program {
+        mark_frame_start(*lp);
+
+        // do your stuff
+
+        sleep_to_maintain_max_fps(*lp); 
+        mark_frame_end(*lp);
+    }
+}
+
+
 */
+
+
+
 Looping_Program :: struct {
 
     end_program := false; // loop on this condition

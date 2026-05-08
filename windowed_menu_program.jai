@@ -29,8 +29,8 @@ Resolution_Entry :: struct {
 }
 
 enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
+    for available_resolutions  free(it.label);
     array_reset(*available_resolutions);
-    array_reset(*resolution_labels);
 
     #if OS == .WINDOWS {
         native_w : s32 = 0;
@@ -90,7 +90,6 @@ enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
         for s : seen {
             label := sprint("%x%", s.w, s.h);
             array_add(*available_resolutions, .{s.w, s.h, label});
-            array_add(*resolution_labels, label);
         }
 
         // find current resolution in the list
@@ -107,9 +106,6 @@ enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
         array_add(*available_resolutions, .{1920, 1080, "1920x1080"});
         array_add(*available_resolutions, .{1280, 720,  "1280x720"});
         array_add(*available_resolutions, .{640,  480,  "640x480"});
-        array_add(*resolution_labels, "1920x1080");
-        array_add(*resolution_labels, "1280x720");
-        array_add(*resolution_labels, "640x480");
     }
 }
 
@@ -168,8 +164,14 @@ Windowed_Menu_Program_Base :: struct {
     volume: float32 = 50.0;
     sensitivity: float32 = 0.3;
     resolution_selection: s32 = 0;
+
     available_resolutions: [..] Resolution_Entry;
-    resolution_labels: [..] string;
+}
+
+deinit :: (using wmpb : *Windowed_Menu_Program_Base) {
+    deinit(*base);
+    for available_resolutions free(it.label);
+    array_free(available_resolutions);
 }
 
 
@@ -183,7 +185,7 @@ init_default_ui_sounds :: (wmpb : *Windowed_Menu_Program_Base) {
 
 // this is a specific implementation that we're providing to you to let you have one for free and see how we do stuff
 Windowed_Menu_Program :: struct {
-    using #as wmpg : Windowed_Menu_Program_Base;
+    using #as wmpb : Windowed_Menu_Program_Base;
 
     current_menu := Current_Menu.MAIN;
     menu_return_to := Current_Menu.MAIN;
@@ -191,7 +193,14 @@ Windowed_Menu_Program :: struct {
 
 
 init :: (using wmp : *Windowed_Menu_Program) {
+    init(*wmpb);
 }
+
+deinit :: (using wmp : *Windowed_Menu_Program) {
+    log("windowed menu program deinit called");
+    deinit(*wmpb);
+}
+
 
 init_menu_defaults :: (using wp: *Windowed_Menu_Program_Base) {
     desired_fullscreen = fullscreen;
@@ -387,8 +396,11 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
 
     push_centered_layout(400.0, content_y, 40.0, 10.0, 18.0);
 
-    if resolution_labels.count > 0 {
-        ui_dropdown("Resolution", resolution_labels, *resolution_selection);
+    if available_resolutions.count > 0 {
+        push_allocator(temp);
+        labels := NewArray(available_resolutions.count, string);
+        for available_resolutions  labels[it_index] = it.label;
+        ui_dropdown("Resolution", labels, *resolution_selection);
     }
 
     ui_spacing(4);
