@@ -81,7 +81,6 @@ init :: (using wp: *Windowed_Program) {
 }
 
 deinit :: (using wp: *Windowed_Program) {
-    deinit(*lp);
 
     Sound_Player.sound_player_shutdown();
 
