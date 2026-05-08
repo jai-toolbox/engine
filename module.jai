@@ -49,6 +49,12 @@ format_vec3 :: (v: Vector3, decimals: int = 2) -> string {
         FormatFloat.{value=v.z, trailing_width=decimals, zero_removal=.NO});
 }
 
+buf_to_string :: (buf: [] u8, len: s32) -> string {
+    s: string;
+    s.data = buf.data;
+    s.count = len;
+    return s;
+}
 
 world_to_screen :: (world_pos: Vector3, camera: *Camera, window_w: float32, window_h: float32) -> Vector2, bool {
     view       := get_world_to_camera_matrix(camera);

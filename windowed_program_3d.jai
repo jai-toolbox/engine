@@ -317,14 +317,14 @@ swap_buffers :: (window: Window_Creation.Window_Type, vsync := true) {  // @Inco
     }
 }
 
-sample_first_person_movement_input :: () -> First_Person_Movement_Input {
+sample_first_person_movement_input :: (forward := #char "W", backward := #char "S", right := #char "D", left := #char "A", jump := #char " ") -> First_Person_Movement_Input {
     return .{
-            key_pressed (xx #char "W"),
-            key_pressed (xx #char "S"),
-            key_pressed (xx #char "D"),
-            key_pressed (xx #char "A"),
-            key_pressed (xx #char " "),
-        };
+        key_pressed(xx forward),
+        key_pressed(xx backward),
+        key_pressed(xx right),
+        key_pressed(xx left),
+        key_pressed(xx jump),
+    };
 }
 
 get_forward_and_side_input :: (using fpmi : First_Person_Movement_Input) -> forward_input: float, side_input: float {
