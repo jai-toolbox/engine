@@ -76,6 +76,15 @@ world_to_screen :: (world_pos: Vector3, camera: *Camera, window_w: float32, wind
 }
 
 
+screen_to_normalized_x :: inline (px: float32, window_w: float32) -> float32 {
+    return (px / window_w) * 2.0 - 1.0;
+}
+
+screen_to_normalized_y :: inline (py: float32, window_h: float32) -> float32 {
+    return -((py / window_h) * 2.0 - 1.0);
+}
+
+
 // The reason this is here is that it doesn't belong in the network or the serialization modules
 // it needs to be somwehere, so maybe making the engine be the place where we combine them is a good thing.
 
