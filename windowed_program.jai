@@ -12,8 +12,16 @@ Engine_Sound_Type :: enum u8 {
     SLIDER_CHANGE;
 }
 
+Build_Type :: enum {
+    DEVELOPMENT;
+    DISTRIBUTION;
+}
+
 Windowed_Program :: struct {
     using # as lp : Looping_Program;
+
+    build_type :: Build_Type.DEVELOPMENT;
+    // build_type :: Build_Type.DISTRIBUTION;
 
     window : Window_Creation.Window_Type;
     saved_window_info : Window_Creation.Saved_Window_Info;
@@ -56,6 +64,8 @@ Windowed_Program :: struct {
 
 init :: (using wp: *Windowed_Program) {
     init(*lp);
+    init_assets_for_build_type(wp);
+
     window = Window_Creation.create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
 
@@ -95,6 +105,25 @@ deinit :: (using wp: *Windowed_Program) {
     if ui_initialized {
         ui_destroy(*ui_context);
         deinit(*ui_font);
+    }
+
+    deinit_assets();
+}
+
+init_assets_for_build_type :: (using wp: *Windowed_Program) {
+    DATA_DIRECTORY :: "data";
+    DATA_PACKAGE   :: "data.package";
+
+    #if build_type == .DEVELOPMENT {
+        init_from_loose_files(DATA_DIRECTORY);
+    } else #if build_type == .DISTRIBUTION {
+        if file_exists(DATA_DIRECTORY) {
+            packaged := package_directory(DATA_DIRECTORY, DATA_PACKAGE);
+            assert(packaged, "Failed to create data.package from loose data directory.");
+        }
+
+        package_loaded := init_from_package(DATA_PACKAGE);
+        assert(package_loaded, "Distribution build could not load data.package.");
     }
 }
 

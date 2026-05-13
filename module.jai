@@ -20,7 +20,6 @@ Eventually you'll want to to do something that doesn't exist in the castle, and 
 Network :: #import "tbx/network";
 #scope_export
 
-
 #import "tbx/configuration";
 #import "tbx/rectangle";
 #import "tbx/movement";
@@ -30,6 +29,8 @@ Network :: #import "tbx/network";
 #import "tbx/time";
 #import "tbx/math";
 #import "tbx/ui";
+#import "tbx/assets";
+#import "File_Utilities";
 
 
 // ordering matters.

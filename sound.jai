@@ -4,9 +4,13 @@ Sound_Player :: #import "Sound_Player";
 #scope_export
 
 #import "Hash_Table";
+#import "tbx/assets";
 
 load_sound :: (path : string) -> Sound_Player.Sound_Data {
-    data := Sound_Player.load_audio_file(path);
+    asset_loaded, asset_data := load_asset_copy(path);
+    if !asset_loaded exit(1);
+
+    data := Sound_Player.load_audio_data(path, asset_data);
     if !data.loaded exit(1);
     return data;
 }
