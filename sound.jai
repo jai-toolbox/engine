@@ -89,6 +89,16 @@ stop_sound :: (stream: **Sound_Player.Sound_Stream) {
     stream.* = null;
 }
 
+set_sound_volume :: (stream: *Sound_Player.Sound_Stream, volume: float) {
+    if stream == null return;
+
+    if volume < 0.0 volume = 0.0;
+
+    lock(*Sound_Player.sound_mutex);
+    stream.user_volume_scale = volume;
+    unlock(*Sound_Player.sound_mutex);
+}
+
 
 update_listener_orientation :: (position: Vector3, yaw: float) {
     yaw_quat: Quaternion;
