@@ -62,7 +62,7 @@ Windowed_Program_3D :: struct {
 init :: (using wp3 : *Windowed_Program_3D) {
     init(*wp);
     init(*camera_per_object_transform_color_renderer);
-    init_section_timer(*section_timer);
+    init(*section_timer);
 
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;

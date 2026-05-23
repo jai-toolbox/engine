@@ -111,6 +111,8 @@ deinit :: (using wp: *Windowed_Program) {
 }
 
 init_assets_for_build_type :: (using wp: *Windowed_Program) {
+    if assets_initialized return;
+
     DATA_DIRECTORY :: "data";
     DATA_PACKAGE   :: "data.package";
 
