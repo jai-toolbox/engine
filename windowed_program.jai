@@ -203,8 +203,11 @@ per_frame_update :: (using wp: *Windowed_Program) {
     if old_focus && !window_has_focus {
         show_cursor(wp);
         if fullscreen {
-            ChangeDisplaySettingsW(null, 0);
-            ShowWindow(window, SW_MINIMIZE);
+
+            #if OS == .WINDOWS {
+                ChangeDisplaySettingsW(null, 0);
+                ShowWindow(window, SW_MINIMIZE);
+            }
         }
     }
 
