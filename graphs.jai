@@ -60,13 +60,13 @@ update_graph_visual :: (using pg: *Performance_Graph) {
 }
 
 
-create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33) -> Indexed_Triangle_Positions_Colors {
+create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33) -> Indexed_Triangle_Positions_Color_Alphas {
 
     points: [MAX_HISTORY] Vector2;
     point_count: int = 0;
 
     if st.completed_tree_count == 0 {
-        empty: Indexed_Triangle_Positions_Colors;
+        empty: Indexed_Triangle_Positions_Color_Alphas;
         return empty;
     }
 
@@ -96,7 +96,7 @@ create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95,
     }
 
     if point_count < 2 {
-        empty: Indexed_Triangle_Positions_Colors;
+        empty: Indexed_Triangle_Positions_Color_Alphas;
         return empty;
     }
 
@@ -106,27 +106,27 @@ create_frame_time_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95,
 
     graph_itp := create_graph(points_slice, graph_origin, graph_size);
 
-    itpc: Indexed_Triangle_Positions_Colors;
-    for graph_itp.indices array_add(*itpc.indices, it);
-    for graph_itp.positions array_add(*itpc.positions, it);
+    itpca: Indexed_Triangle_Positions_Color_Alphas;
+    for graph_itp.indices array_add(*itpca.indices, it);
+    for graph_itp.positions array_add(*itpca.positions, it);
 
-    color := Vector3.{0.2, 0.8, 0.3};
-    array_reserve(*itpc.rgb_colors, itpc.positions.count);
-    for 1..itpc.positions.count array_add(*itpc.rgb_colors, color);
+    color := Vector4.{0.2, 0.8, 0.3, 1.0};
+    array_reserve(*itpca.rgba_colors, itpca.positions.count);
+    for 1..itpca.positions.count array_add(*itpca.rgba_colors, color);
 
-    return itpc;
+    return itpca;
 }
 
 
-create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Colors {
-    itpc: Indexed_Triangle_Positions_Colors;
+create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.5, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67) -> Indexed_Triangle_Positions_Color_Alphas {
+    itpca: Indexed_Triangle_Positions_Color_Alphas;
 
     range_ms := max_ms - min_ms;
     if range_ms <= 0 range_ms = 1.0;
 
-    merge(*itpc, create_itpc_with_color(
+    merge(*itpca, create_itpca_with_color_alpha(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
-        .{0.1, 0.1, 0.1}));
+        .{0.1, 0.1, 0.1, 1.0}));
 
     line_half_height := graph_size.y * 0.005;
     first_tick_ms := cast(float) cast(int) min_ms + 1.0;
@@ -136,26 +136,26 @@ create_frame_time_graph_with_background :: (st: *Section_Timer, graph_origin: Ve
             y_norm := (tick_ms - min_ms) / range_ms;
             if y_norm >= 0.0 && y_norm <= 1.0 {
                 y := graph_origin.y + y_norm * graph_size.y;
-                merge(*itpc, create_itpc_with_color(
+                merge(*itpca, create_itpca_with_color_alpha(
                     create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, 0.01),
-                    .{0.35, 0.35, 0.35}));
+                    .{0.35, 0.35, 0.35, 1.0}));
             }
         }
         tick_ms += 1.0;
     }
 
-    merge(*itpc, create_frame_time_graph(st, graph_origin, graph_size, min_ms, max_ms));
+    merge(*itpca, create_frame_time_graph(st, graph_origin, graph_size, min_ms, max_ms));
 
     target_y_norm := (target_ms - min_ms) / range_ms;
     if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
         target_y := graph_origin.y + target_y_norm * graph_size.y;
         line_half_height_target := graph_size.y * 0.01;
-        merge(*itpc, create_itpc_with_color(
+        merge(*itpca, create_itpca_with_color_alpha(
             create_quad(graph_origin.x, target_y - line_half_height_target, graph_origin.x + graph_size.x, target_y + line_half_height_target, -0.01),
-            .{1.0, 0.0, 0.0}));
+            .{1.0, 0.0, 0.0, 1.0}));
     }
 
-    return itpc;
+    return itpca;
 }
 
 
@@ -195,15 +195,15 @@ hash_section_name_to_color :: (name: string) -> Vector3 {
     return color;
 }
 
-create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67, print_legend: bool = false) -> Indexed_Triangle_Positions_Colors {
-    itpc: Indexed_Triangle_Positions_Colors;
+create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95, -0.95}, graph_size: Vector2 = .{0.3, 0.3}, min_ms: float = 0.0, max_ms: float = 33.33, target_ms: float = 16.67, print_legend: bool = false) -> Indexed_Triangle_Positions_Color_Alphas {
+    itpca: Indexed_Triangle_Positions_Color_Alphas;
 
     range_ms := max_ms - min_ms;
     if range_ms <= 0 range_ms = 1.0;
 
-    merge(*itpc, create_itpc_with_color(
+    merge(*itpca, create_itpca_with_color_alpha(
         create_quad(graph_origin.x, graph_origin.y, graph_origin.x + graph_size.x, graph_origin.y + graph_size.y, 0.02),
-        .{0.1, 0.1, 0.1}));
+        .{0.1, 0.1, 0.1, 1.0}));
 
     line_half_height := graph_size.y * 0.005;
     tick_ms := cast(float)(cast(int) min_ms + 1);
@@ -212,9 +212,9 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
             y_norm := (tick_ms - min_ms) / range_ms;
             if y_norm >= 0.0 && y_norm <= 1.0 {
                 y := graph_origin.y + y_norm * graph_size.y;
-                merge(*itpc, create_itpc_with_color(
+                merge(*itpca, create_itpca_with_color_alpha(
                     create_quad(graph_origin.x, y - line_half_height, graph_origin.x + graph_size.x, y + line_half_height, 0.01),
-                    .{0.35, 0.35, 0.35}));
+                    .{0.35, 0.35, 0.35, 1.0}));
             }
         }
         tick_ms += 1.0;
@@ -224,14 +224,14 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
     if target_y_norm >= 0.0 && target_y_norm <= 1.0 {
         target_y := graph_origin.y + target_y_norm * graph_size.y;
         line_half_height_target := graph_size.y * 0.01;
-        merge(*itpc, create_itpc_with_color(
+        merge(*itpca, create_itpca_with_color_alpha(
             create_quad(graph_origin.x, target_y - line_half_height_target, graph_origin.x + graph_size.x, target_y + line_half_height_target, -0.02),
-            .{1.0, 0.0, 0.0}));
+            .{1.0, 0.0, 0.0, 1.0}));
     }
 
     root := get_latest_completed_section(st);
-    if root == null return itpc;
-    if root.child_count == 0 return itpc;
+    if root == null return itpca;
+    if root.child_count == 0 return itpca;
 
     child_count := cast(int) root.child_count;
 
@@ -268,14 +268,14 @@ create_section_bar_graph :: (st: *Section_Timer, graph_origin: Vector2 = .{-0.95
                 FormatFloat.{value=color.z, trailing_width=2, zero_removal=.NO});
         }
 
-        merge(*itpc, create_itpc_with_color(
+        merge(*itpca, create_itpca_with_color_alpha(
             create_quad(bar_x0, bar_y0, bar_x1, bar_y1, -0.01),
-            color));
+            .{color.x, color.y, color.z, 1.0}));
     }
 
     if print_legend print("\n");
 
-    return itpc;
+    return itpca;
 }
 
 
