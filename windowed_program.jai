@@ -75,6 +75,7 @@ init :: (using wp: *Windowed_Program) {
     #import "stb_image";
     stbi_set_flip_vertically_on_load(1);
     ui_font = msdf_font_load("data/fonts/pt_serif/atlas.json", "data/fonts/pt_serif/atlas.png");
+    stbi_set_flip_vertically_on_load(0);
     init(*ui_msdf_renderer);
     init(*ui_rect_renderer);
     ui_init(*ui_context, *ui_font, *ui_msdf_renderer, *ui_rect_renderer);
