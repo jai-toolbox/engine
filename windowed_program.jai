@@ -131,6 +131,19 @@ sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
     sleep_to_maintain_max_fps(*lp);
 }
 
+update_centered_mouse_delta :: (using wp: *Windowed_Program) {
+    #if OS == .LINUX {
+        x, y, success := Window_Creation.get_mouse_pointer_position(window, false);
+        _, _, w, h := Window_Creation.get_dimensions(window, false);
+        if success {
+            Input.mouse_delta_x = x - w / 2;
+            Input.mouse_delta_y = y - h / 2;
+        }
+
+        keep_mouse_in_center_of_screen(wp);
+    }
+}
+
 
 
 get_window_dimensions_vector :: (using wp : *Windowed_Program) -> Vector2 {
@@ -260,6 +273,14 @@ set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
         success, new_width, new_height := toggle_fullscreen_exclusive(window, enabled, *saved_window_info);
         fullscreen = enabled;
         set_vsync(vsync);
+    } else #if OS == .LINUX {
+        success, new_width, new_height := Window_Creation.toggle_fullscreen(window, enabled, *saved_window_info);
+        if success {
+            fullscreen = enabled;
+            window_width = new_width;
+            window_height = new_height;
+            set_vsync(vsync);
+        }
     }
 }
 
