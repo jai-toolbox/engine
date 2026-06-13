@@ -372,11 +372,13 @@ render_tick_stats :: (using wp : *Windowed_Program) {
 }
 
 keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
+    x, y, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
     #if OS == .WINDOWS {
-        x, y, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
         set_mouse_pointer_position (w / 2, h / 2);
-    } else {
-        // don't know how to do this on linux yet.
+    } else #if OS == .LINUX {
+        X11 :: #import "X11";
+        X11.XWarpPointer(X11.x_global_display, X11.None, window, 0, 0, 0, 0, w / 2, h / 2);
+        X11.XFlush(X11.x_global_display);
     }
 }
 
@@ -386,6 +388,11 @@ show_cursor :: (using wp: *Windowed_Program) {
         #if OS == .WINDOWS {
             win32 :: #import "Windows";
             win32.ShowCursor(1);
+        } else #if OS == .LINUX {
+            X11 :: #import "X11";
+            X11.XUngrabPointer(X11.x_global_display, X11.CurrentTime);
+            X11.XUndefineCursor(X11.x_global_display, window);
+            X11.XFlush(X11.x_global_display);
         }
     }
 }
@@ -396,6 +403,21 @@ hide_cursor :: (using wp: *Windowed_Program) {
         #if OS == .WINDOWS {
             win32 :: #import "Windows";
             win32.ShowCursor(0);
+        } else #if OS == .LINUX {
+            X11 :: #import "X11";
+            X11.XDefineCursor(X11.x_global_display, window, X11.x_global_invisible_cursor);
+            X11.XGrabPointer(
+                X11.x_global_display,
+                window,
+                X11.True,
+                X11.ButtonPressMask | X11.ButtonReleaseMask | X11.PointerMotionMask,
+                X11.GrabModeAsync,
+                X11.GrabModeAsync,
+                window,
+                X11.x_global_invisible_cursor,
+                X11.CurrentTime
+            );
+            X11.XFlush(X11.x_global_display);
         }
     }
 }

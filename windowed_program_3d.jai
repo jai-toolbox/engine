@@ -3,7 +3,65 @@ Window_Creation :: #import "Window_Creation";
 Sound_Player :: #import "Sound_Player";
 Input :: #import "Input";
 Simp :: #import "Simp";
+#if OS == .LINUX {
+    X11 :: #import "X11";
+}
 #scope_export
+
+#if OS == .LINUX {
+    libXi :: #library,system "libXi";
+
+    XIAllDevices : s32 : 0;
+    XI_RawMotion : s32 : 17;
+    XI_LASTEVENT : s32 : 32;
+
+    XIEventMask :: struct {
+        deviceid: s32;
+        mask_len: s32;
+        mask: *u8;
+    }
+
+    XIValuatorState :: struct {
+        mask_len: s32;
+        mask: *u8;
+        values: *float64;
+    }
+
+    XIRawEvent :: struct {
+        type: s32;
+        serial: u64;
+        send_event: X11.Bool;
+        display: *X11.Display;
+        extension: s32;
+        evtype: s32;
+        time: X11.Time;
+        deviceid: s32;
+        sourceid: s32;
+        detail: s32;
+        flags: s32;
+        valuators: XIValuatorState;
+        raw_values: *float64;
+    }
+
+    XIQueryVersion :: (display: *X11.Display, major_version_inout: *s32, minor_version_inout: *s32) -> X11.Status #foreign libXi;
+    XISelectEvents :: (dpy: *X11.Display, win: X11.Window, masks: *XIEventMask, num_masks: s32) -> s32 #foreign libXi;
+
+    xi_set_mask :: (mask: *u8, event_type: s32) {
+        mask[event_type >> 3] |= cast(u8)(1 << (event_type & 7));
+    }
+
+    xi_mask_is_set :: (mask: *u8, index: s32) -> bool {
+        return (mask[index >> 3] & cast(u8)(1 << (index & 7))) != 0;
+    }
+
+    xi_count_valuator_values :: (using state: XIValuatorState) -> int {
+        count := 0;
+        for i: 0..mask_len * 8 - 1 {
+            if xi_mask_is_set(mask, i) count += 1;
+        }
+        return count;
+    }
+}
 
 Camera_Mode :: enum {
     FIRST_PERSON;
@@ -47,7 +105,10 @@ Windowed_Program_3D :: struct {
 
     renderables : [..] Camera_Per_Object_Transform_Color_Renderable;
 
-    last_mouse_delta_x, last_mouse_delta_y: int;
+    raw_mouse_supported := false;
+    raw_mouse_extension_opcode: s32;
+    raw_mouse_dx, raw_mouse_dy: float64;
+    raw_mouse_events: int;
 
     // 2D camera state
     ortho_center : Vector2;
@@ -64,6 +125,10 @@ init :: (using wp3 : *Windowed_Program_3D) {
     init(*camera_per_object_transform_color_renderer);
     init(*section_timer);
 
+    #if OS == .LINUX {
+        init_raw_mouse_input(wp3);
+    }
+
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
 
@@ -77,6 +142,82 @@ init :: (using wp3 : *Windowed_Program_3D) {
     if ok_s camera.sensitivity = conf_sens;
 
     load_menu_settings(*wp3.wp);
+}
+
+#if OS == .LINUX {
+    init_raw_mouse_input :: (using wp3: *Windowed_Program_3D) {
+        display := X11.x_global_display;
+        if !display {
+            return;
+        }
+
+        opcode, event, error: s32;
+        if !X11.XQueryExtension(display, "XInputExtension", *opcode, *event, *error) {
+            return;
+        }
+
+        major := cast(s32) 2;
+        minor := cast(s32) 0;
+        if XIQueryVersion(display, *major, *minor) == X11.BadRequest {
+            return;
+        }
+
+        mask: [(XI_LASTEVENT + 7) / 8] u8;
+        xi_set_mask(mask.data, XI_RawMotion);
+
+        event_mask: XIEventMask;
+        event_mask.deviceid = XIAllDevices;
+        event_mask.mask_len = size_of(type_of(mask));
+        event_mask.mask = mask.data;
+
+        root := X11.DefaultRootWindow(display);
+        result := XISelectEvents(display, root, *event_mask, 1);
+        X11.XFlush(display);
+
+        raw_mouse_supported = result == 0;
+        raw_mouse_extension_opcode = opcode;
+    }
+
+    read_raw_mouse_events :: (using wp3: *Windowed_Program_3D) {
+        raw_mouse_dx = 0;
+        raw_mouse_dy = 0;
+        raw_mouse_events = 0;
+
+        if !raw_mouse_supported return;
+
+        display := X11.x_global_display;
+        events_to_put_back: [..] X11.XEvent;
+        defer array_free(events_to_put_back);
+
+        while X11.XPending(display) {
+            event: X11.XEvent;
+            X11.XNextEvent(display, *event);
+
+            is_raw_mouse_event := false;
+            if event.type == X11.GenericEvent && event.xcookie.extension == raw_mouse_extension_opcode {
+                if X11.XGetEventData(display, *event.xcookie) != 0 {
+                    if event.xcookie.evtype == XI_RawMotion {
+                        raw := cast(*XIRawEvent) event.xcookie.data;
+                        value_count := xi_count_valuator_values(raw.valuators);
+                        if value_count >= 1 raw_mouse_dx += raw.raw_values[0];
+                        if value_count >= 2 raw_mouse_dy += raw.raw_values[1];
+                        raw_mouse_events += 1;
+                        is_raw_mouse_event = true;
+                    }
+                    X11.XFreeEventData(display, *event.xcookie);
+                }
+            }
+
+            if !is_raw_mouse_event {
+                array_add(*events_to_put_back, event);
+            }
+        }
+
+        for i: 0..events_to_put_back.count - 1 {
+            index := events_to_put_back.count - 1 - i;
+            X11.XPutBackEvent(display, *events_to_put_back[index]);
+        }
+    }
 }
 
 render_movement_stats :: (using wp3 : *Windowed_Program_3D) {
@@ -93,6 +234,28 @@ render_iteration :: (using wp3 : *Windowed_Program_3D) {
 }
 
 per_frame_update :: (using wp3 : *Windowed_Program_3D) {
+    linux_motion_dx := 0;
+    linux_motion_dy := 0;
+    linux_nonzero_motion_events := 0;
+
+    #if OS == .LINUX {
+        if camera_look_active && current_menu == .NONE && camera_mode != .TWO_DIMENSIONS && window_has_focus {
+            read_raw_mouse_events(wp3);
+            _, _, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
+
+            motion_event: X11.XEvent;
+            while X11.XCheckTypedWindowEvent(X11.x_global_display, window, X11.MotionNotify, *motion_event) {
+                event_dx := motion_event.xmotion.x - w / 2;
+                event_dy := motion_event.xmotion.y - h / 2;
+                if event_dx != 0 || event_dy != 0 {
+                    linux_motion_dx += event_dx;
+                    linux_motion_dy += event_dy;
+                    linux_nonzero_motion_events += 1;
+                }
+            }
+        }
+    }
+
     per_frame_update(*wp3.wp);
 
     // sync sensitivity from menu to camera
@@ -114,6 +277,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
             if it.key_code == xx #char "M" && current_menu == .NONE {
                 camera_look_active = !camera_look_active;
             }
+
         }
     }
 
@@ -126,9 +290,28 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
         hide_cursor(*wp);
         #if OS == .WINDOWS {
             keep_mouse_in_center_of_screen(*wp3.wp);
-            last_mouse_delta_x = Input.mouse_delta_x;
-            last_mouse_delta_y = Input.mouse_delta_y;
             update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
+        } else #if OS == .LINUX {
+            dx := 0;
+            dy := 0;
+
+            if raw_mouse_events > 0 {
+                dx = cast(int) raw_mouse_dx;
+                dy = cast(int) raw_mouse_dy;
+            } else if linux_nonzero_motion_events > 0 {
+                dx = linux_motion_dx;
+                dy = linux_motion_dy;
+            } else {
+                x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
+                _, _, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
+                if success {
+                    dx = x - w / 2;
+                    dy = y - h / 2;
+                }
+            }
+
+            update_angles_with_deltas(*camera, dx, dy);
+            keep_mouse_in_center_of_screen(*wp3.wp);
         } else {
             x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
             if success update_angles(*camera, x, y);
