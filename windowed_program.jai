@@ -455,7 +455,7 @@ render_performance_graph :: (using wp: *Windowed_Program) {
         max_ms = performance_graph.graph_max_ms,
         target_ms = min_frame_time * 1000
     );
-    immediate_render(*wp.absolute_position_color_alpha_renderer, graph_renderable);
+    immediate_render(*wp.absolute_position_color_alpha_renderer, with_alpha(graph_renderable));
 }
 
 
@@ -474,7 +474,18 @@ render_section_bar_graph :: (using wp: *Windowed_Program) {
         target_ms = min_frame_time * 1000,
         print_legend = should_print
     );
-    immediate_render(*wp.absolute_position_color_alpha_renderer, bar_renderable);
+    immediate_render(*wp.absolute_position_color_alpha_renderer, with_alpha(bar_renderable));
+}
+
+with_alpha :: (source: Indexed_Triangle_Positions_Colors, alpha: float = 1.0) -> Indexed_Triangle_Positions_Color_Alphas {
+    result: Indexed_Triangle_Positions_Color_Alphas;
+    result.indices = source.indices;
+    result.positions = source.positions;
+    array_reserve(*result.rgba_colors, source.rgb_colors.count);
+    for color: source.rgb_colors {
+        array_add(*result.rgba_colors, .{color.x, color.y, color.z, alpha});
+    }
+    return result;
 }
 
 
