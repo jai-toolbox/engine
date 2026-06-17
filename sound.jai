@@ -49,8 +49,8 @@ play_spatial_sound_looping :: (data: *Sound_Player.Sound_Data, position: Vector3
     stream.position = position;
     stream.inner_radius = 2.0;
     stream.outer_radius = 50.0;
-    set_repeating(stream, true);
-    start_playing(stream);
+    Sound_Player.set_repeating(stream, true);
+    Sound_Player.start_playing(stream);
     return stream;
 }
 
@@ -75,7 +75,7 @@ play_sound_looping :: (using sound_catalog: *Table(u8, Sound_Player.Sound_Data),
 }
 
 play_spatial_sound_looping :: (using sc: *Table(u8, Sound_Player.Sound_Data), sound_type: u8, position: Vector3 = .{0, 0, 0}, category := Sound_Player.Sound_Category.GENERAL_SFX, volume := 1.0) -> *Sound_Player.Sound_Stream {
-    sound_data := table_find_pointer(*sound_type_to_data, sound_type);
+    sound_data := table_find_pointer(sc, sound_type);
     if !sound_data return null;
     return play_spatial_sound_looping(sound_data, position, category, volume);
 }
@@ -96,6 +96,14 @@ set_sound_volume :: (stream: *Sound_Player.Sound_Stream, volume: float) {
 
     lock(*Sound_Player.sound_mutex);
     stream.user_volume_scale = volume;
+    unlock(*Sound_Player.sound_mutex);
+}
+
+set_sound_position :: (stream: *Sound_Player.Sound_Stream, position: Vector3) {
+    if stream == null return;
+
+    lock(*Sound_Player.sound_mutex);
+    stream.position = position;
     unlock(*Sound_Player.sound_mutex);
 }
 
