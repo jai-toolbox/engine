@@ -476,6 +476,33 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     push_centered_layout(400.0, content_y, 40.0, 10.0, 18.0);
 
     ui_slider_float("Sensitivity", *sensitivity, 0.01, 2.0);
+    ui_spacing(12);
+    ui_checkbox("Crosshair", *crosshair_settings.enabled);
+
+    labels := crosshair_type_labels();
+    crosshair_selection := cast(s32) crosshair_settings.kind;
+    if ui_dropdown("Crosshair Type", labels, *crosshair_selection) {
+        crosshair_settings.kind = cast(Crosshair_Type) crosshair_selection;
+        if crosshair_settings.kind == .CUSTOM {
+            load_custom_crosshair(*crosshair_custom, configuration.config_path);
+        }
+    }
+
+    ui_slider_float("Crosshair R", *crosshair_settings.color.x, 0.0, 1.0);
+    ui_slider_float("Crosshair G", *crosshair_settings.color.y, 0.0, 1.0);
+    ui_slider_float("Crosshair B", *crosshair_settings.color.z, 0.0, 1.0);
+    ui_slider_float("Crosshair Opacity", *crosshair_settings.color.w, 0.0, 1.0);
+    ui_slider_float("Crosshair Size", *crosshair_settings.size, 0.25, 4.0);
+
+    ui_label("Crosshair Preview");
+    preview_rect := ui_allocate_rect(140.0, 140.0);
+    ui_cmd_rect(preview_rect, .{0.02, 0.02, 0.025, 0.92});
+    ui_cmd_rect_outline(preview_rect, .{0.7, 0.7, 0.75, 0.85});
+    set_crosshair_preview_rect(*base, preview_rect);
+
+    if ui_button("Reload Custom Crosshair") {
+        load_custom_crosshair(*crosshair_custom, configuration.config_path);
+    }
 
     ui_spacing(20);
 
@@ -566,6 +593,13 @@ save_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_bool(*configuration, "graphics", "vsync", desired_vsync);
     set_int(*configuration, "graphics", "max_fps", cast(int) desired_max_fps);
     set_float(*configuration, "input", "sensitivity", sensitivity);
+    set_bool(*configuration, "crosshair", "enabled", crosshair_settings.enabled);
+    set_int(*configuration, "crosshair", "type", cast(int) crosshair_settings.kind);
+    set_float(*configuration, "crosshair", "r", crosshair_settings.color.x);
+    set_float(*configuration, "crosshair", "g", crosshair_settings.color.y);
+    set_float(*configuration, "crosshair", "b", crosshair_settings.color.z);
+    set_float(*configuration, "crosshair", "a", crosshair_settings.color.w);
+    set_float(*configuration, "crosshair", "size", crosshair_settings.size);
     save(*configuration);
 }
 
@@ -599,6 +633,31 @@ load_menu_settings :: (using wp: *Windowed_Menu_Program) {
     sens, ok_sens := get_float(*configuration, "input", "sensitivity");
     if ok_sens && sens >= 0.01 && sens <= 2.0 {
         sensitivity = sens;
+    }
+
+    ch_enabled, ok_ch_enabled := get_bool(*configuration, "crosshair", "enabled");
+    if ok_ch_enabled crosshair_settings.enabled = ch_enabled;
+
+    ch_type, ok_ch_type := get_int(*configuration, "crosshair", "type");
+    if ok_ch_type && ch_type >= 0 && ch_type <= cast(int) Crosshair_Type.CUSTOM {
+        crosshair_settings.kind = cast(Crosshair_Type) ch_type;
+    }
+
+    ch_r, ok_ch_r := get_float(*configuration, "crosshair", "r");
+    ch_g, ok_ch_g := get_float(*configuration, "crosshair", "g");
+    ch_b, ok_ch_b := get_float(*configuration, "crosshair", "b");
+    ch_a, ok_ch_a := get_float(*configuration, "crosshair", "a");
+    if ok_ch_r crosshair_settings.color.x = clamp(cast(float32) ch_r, 0.0, 1.0);
+    if ok_ch_g crosshair_settings.color.y = clamp(cast(float32) ch_g, 0.0, 1.0);
+    if ok_ch_b crosshair_settings.color.z = clamp(cast(float32) ch_b, 0.0, 1.0);
+    if ok_ch_a crosshair_settings.color.w = clamp(cast(float32) ch_a, 0.0, 1.0);
+
+    ch_size, ok_ch_size := get_float(*configuration, "crosshair", "size");
+    if ok_ch_size crosshair_settings.size = clamp(cast(float32) ch_size, 0.25, 4.0);
+
+    crosshair_custom.path = crosshair_path_next_to_config(configuration.config_path);
+    if crosshair_settings.kind == .CUSTOM {
+        load_custom_crosshair(*crosshair_custom, configuration.config_path);
     }
 
     // apply all loaded settings to the active state

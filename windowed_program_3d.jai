@@ -446,6 +446,8 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
             ui_end_window();
         }
 
+        render_crosshair(*wp3.wp.base);
+
         update_graph_visual(*wp3.performance_graph);
         render_performance_graph(wp3);
         render_section_bar_graph(wp3);
@@ -459,6 +461,7 @@ render_scene :: (using wp3 : *Windowed_Program_3D) {
 
     // end the UI frame, flushes all draw commands
     ui_end(*wp3.wp);
+    render_crosshair_preview(*wp3.wp.base);
 
     // play UI sounds from audio events emitted during the frame
     drain_ui_audio_events(*wp3.wp);

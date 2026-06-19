@@ -30,12 +30,14 @@ Network :: #import "tbx/network";
 #import "tbx/math";
 #import "tbx/ui";
 #import "tbx/assets";
+#import "tbx/model_loading";
 #import "File_Utilities";
 
 
 // ordering matters.
 #load "input.jai";
 #load "looping_program.jai";
+#load "crosshair.jai";
 #load "windowed_program.jai";
 #load "windowed_program_2d.jai";
 #load "windowed_program_3d.jai";

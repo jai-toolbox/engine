@@ -45,6 +45,10 @@ Windowed_Program :: struct {
 
     configuration: Configuration;
 
+    crosshair_settings: Crosshair_Settings;
+    crosshair_custom: Crosshair_Custom_State;
+    crosshair_preview: Crosshair_Preview_State;
+
     // custom UI system replaces GetRect
     ui_context: UI_Context;
     ui_font: MSDF_Font;
@@ -89,6 +93,7 @@ init :: (using wp: *Windowed_Program) {
 
     configuration.config_path = "data/cfg.ini";
     init(*configuration);
+    crosshair_custom.path = crosshair_path_next_to_config(configuration.config_path);
 }
 
 deinit :: (using wp: *Windowed_Program) {
@@ -102,6 +107,7 @@ deinit :: (using wp: *Windowed_Program) {
     deinit(*sound_catalog);
 
     deinit(*configuration);
+    deinit(*crosshair_custom.geometry);
 
     if ui_initialized {
         ui_destroy(*ui_context);
