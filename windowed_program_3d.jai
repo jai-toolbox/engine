@@ -258,8 +258,7 @@ per_frame_update :: (using wp3 : *Windowed_Program_3D) {
 
     per_frame_update(*wp3.wp);
 
-    // sync sensitivity from menu to camera
-    // camera.sensitivity = menu_sensitivity;
+    camera.sensitivity = sensitivity;
 
     // handle ESC to toggle in-game menu
     // handle M to toggle mouse cursor without opening menu

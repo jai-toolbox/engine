@@ -162,7 +162,7 @@ Windowed_Menu_Program_Base :: struct {
     desired_max_fps : u32 = 144;
 
     volume: float32 = 50.0;
-    sensitivity: float32 = 0.3;
+    sensitivity: float32 = 2.1;
     resolution_selection: s32 = 0;
 
     available_resolutions: [..] Resolution_Entry;
@@ -509,7 +509,6 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     ui_begin_row();
 
     if ui_button_colored("Apply", GREEN_NORMAL, GREEN_HOVER, GREEN_ACTIVE) {
-        // sensitivity is synced to camera in Windowed_Program_3D per_frame_update
     }
 
     if ui_button_colored("Save", GOLD_NORMAL, GOLD_HOVER, GOLD_ACTIVE) {
