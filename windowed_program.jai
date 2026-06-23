@@ -12,16 +12,10 @@ Engine_Sound_Type :: enum u8 {
     SLIDER_CHANGE;
 }
 
-Build_Type :: enum {
-    DEVELOPMENT;
-    DISTRIBUTION;
-}
 
 Windowed_Program :: struct {
     using # as lp : Looping_Program;
 
-    build_type :: Build_Type.DEVELOPMENT;
-    // build_type :: Build_Type.DISTRIBUTION;
 
     window : Window_Creation.Window_Type;
     saved_window_info : Window_Creation.Saved_Window_Info;
@@ -123,9 +117,9 @@ init_assets_for_build_type :: (using wp: *Windowed_Program) {
     DATA_DIRECTORY :: "data";
     DATA_PACKAGE   :: "data.package";
 
-    #if build_type == .DEVELOPMENT {
+    #if BUILD_TYPE == .DEVELOPMENT {
         init_from_loose_files(DATA_DIRECTORY);
-    } else #if build_type == .DISTRIBUTION {
+    } else #if BUILD_TYPE == .DISTRIBUTION {
         package_loaded := init_from_package(DATA_PACKAGE);
         assert(package_loaded, "Distribution build could not load data.package.");
     }

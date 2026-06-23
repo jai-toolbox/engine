@@ -33,6 +33,12 @@ Network :: #import "tbx/network";
 #import "tbx/model_loading";
 #import "File_Utilities";
 
+Build_Type :: enum {
+    DEVELOPMENT;
+    DISTRIBUTION;
+}
+
+BUILD_TYPE : Build_Type : .DEVELOPMENT;
 
 // ordering matters.
 #load "input.jai";
