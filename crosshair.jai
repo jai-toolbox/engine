@@ -322,6 +322,10 @@ render_crosshair :: (wp: *Windowed_Program) {
         deinit(*rendered);
     }
 
+    depth_test_was_enabled := glIsEnabled(GL_DEPTH_TEST);
+    depth_write_was_enabled: GLboolean;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, *depth_write_was_enabled);
+
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
@@ -332,7 +336,12 @@ render_crosshair :: (wp: *Windowed_Program) {
     immediate_render(*wp.absolute_position_color_alpha_renderer, rendered);
     clear_active_program();
 
-    glDepthMask(GL_TRUE);
+    if depth_test_was_enabled {
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(depth_write_was_enabled);
 }
 
 set_crosshair_preview_rect :: (wp: *Windowed_Program, rect: UI_Rect) {
@@ -365,6 +374,10 @@ render_crosshair_preview :: (wp: *Windowed_Program) {
         deinit(*rendered);
     }
 
+    depth_test_was_enabled := glIsEnabled(GL_DEPTH_TEST);
+    depth_write_was_enabled: GLboolean;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, *depth_write_was_enabled);
+
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
@@ -375,5 +388,10 @@ render_crosshair_preview :: (wp: *Windowed_Program) {
     immediate_render(*wp.absolute_position_color_alpha_renderer, rendered);
     clear_active_program();
 
-    glDepthMask(GL_TRUE);
+    if depth_test_was_enabled {
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(depth_write_was_enabled);
 }
