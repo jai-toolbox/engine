@@ -33,14 +33,8 @@ Network :: #import "tbx/network";
 #import "tbx/model_loading";
 #import "File_Utilities";
 
-Build_Type :: enum {
-    DEVELOPMENT;
-    DISTRIBUTION;
-}
-
-BUILD_TYPE : Build_Type : .DEVELOPMENT;
-
 // ordering matters.
+#load "build_type.jai";
 #load "input.jai";
 #load "looping_program.jai";
 #load "crosshair.jai";
