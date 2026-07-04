@@ -48,15 +48,11 @@ Looping_Program :: struct {
 }
 
 #if OS == .WINDOWS {
+    #import "Windows";
+
     kernel32 :: #system_library "kernel32";
-    winmm :: #system_library "winmm";
     HANDLER_ROUTINE :: #type (dwCtrlType: u32) -> s32 #c_call;
     SetConsoleCtrlHandler :: (HandlerRoutine: HANDLER_ROUTINE, Add: s32) -> s32 #foreign kernel32;
-    GetCurrentThread :: () -> *void #foreign kernel32;
-    SetThreadPriority :: (hThread: *void, nPriority: s32) -> s32 #foreign kernel32;
-    timeBeginPeriod :: (uPeriod: u32) -> u32 #foreign winmm;
-
-    THREAD_PRIORITY_ABOVE_NORMAL :: 1;
 
     _signal_target: *bool;
     _improved_loop_timing := false;

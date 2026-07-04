@@ -39,6 +39,7 @@ Network :: #import "tbx/network";
 #load "looping_program.jai";
 #load "crosshair.jai";
 #load "windowed_program.jai";
+#load "software_windowed_program.jai";
 #load "windowed_program_2d.jai";
 #load "windowed_program_3d.jai";
 #load "windowed_menu_program.jai";
