@@ -2,6 +2,7 @@
     #import "File";
     #import "File_Utilities";
     #import "Windows";
+    #import "stb_image_write";
 
     gdi32 :: #system_library "gdi32";
 
@@ -208,6 +209,15 @@
         recording.frame += 1;
     }
 
+    save_screenshot :: (using swp: *Software_Windowed_Program) {
+        if framebuffer.pixels.count == 0 return;
+
+        make_directory_if_it_does_not_exist("screenshots", recursive = true);
+        path := make_screenshot_file_name();
+        write_png32(path, framebuffer.width, framebuffer.height, framebuffer.pixels);
+        print("Screenshot saved: % (%x%)\n", path, framebuffer.width, framebuffer.height);
+    }
+
     make_recording_directory_name :: () -> string {
         t: SYSTEMTIME;
         GetLocalTime(*t);
@@ -218,6 +228,42 @@
             formatInt(t.wHour, minimum_digits=2),
             formatInt(t.wMinute, minimum_digits=2),
             formatInt(t.wSecond, minimum_digits=2));
+    }
+
+    make_screenshot_file_name :: () -> string {
+        t: SYSTEMTIME;
+        GetLocalTime(*t);
+        return tprint("screenshots/screenshot_%_%_%_%_%_%_%.png",
+            formatInt(t.wYear, minimum_digits=4),
+            formatInt(t.wMonth, minimum_digits=2),
+            formatInt(t.wDay, minimum_digits=2),
+            formatInt(t.wHour, minimum_digits=2),
+            formatInt(t.wMinute, minimum_digits=2),
+            formatInt(t.wSecond, minimum_digits=2),
+            formatInt(t.wMilliseconds, minimum_digits=3));
+    }
+
+    write_png32 :: (path: string, width: s32, height: s32, pixels: [] u32) {
+        if width <= 0 || height <= 0 return;
+        expected_count := width * height;
+        if pixels.count < expected_count return;
+
+        rgb: [..] u8;
+        defer array_free(rgb);
+        array_resize(*rgb, expected_count * 3);
+
+        dst := rgb.data;
+        for i: 0..expected_count - 1 {
+            color := pixels[i];
+            pixel_offset := i * 3;
+            (dst + pixel_offset + 0).* = cast(u8)((color >> 16) & 0xff);
+            (dst + pixel_offset + 1).* = cast(u8)((color >> 8) & 0xff);
+            (dst + pixel_offset + 2).* = cast(u8)( color        & 0xff);
+        }
+
+        if stbi_write_png(temp_c_string(path), width, height, 3, rgb.data, width * 3) == 0 {
+            print("Failed to write screenshot %\n", path);
+        }
     }
 
     write_bmp32 :: (path: string, width: s32, height: s32, pixels: [] u32) {
