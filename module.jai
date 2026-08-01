@@ -109,7 +109,12 @@ attempt_to_connect_to_peer :: (host: *Network.Host, ip_address : string, port : 
     peer_we_are_connecting_to : *Network.Peer;
     connected := false;
 
-    address := Network.get_host_ip_address(ip_address);
+    address, address_ok := Network.get_host_ip_address(ip_address);
+    if !address_ok {
+        log_error("failed to resolve peer ip address '%'", ip_address);
+        return null, false;
+    }
+
     address.port = port;
 
     peer_we_are_connecting_to = Network.host_request_connect(host, address, 3, 5);
