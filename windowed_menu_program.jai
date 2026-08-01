@@ -6,6 +6,7 @@ Sound_Player :: #import "Sound_Player";
 // this is just a sample thing, you'll make your own probably.
 Current_Menu :: enum {
     MAIN;
+    OPEN_MODEL;
     GRAPHICS_SETTINGS;
     USER_SETTINGS;
     SOUND_SETTINGS;
@@ -148,6 +149,8 @@ apply_graphics_settings :: (using wp: *Windowed_Menu_Program_Base) {
     vsync = desired_vsync;
     set_max_fps(wp, desired_max_fps);
     max_fps = desired_max_fps;
+    directional_shadows = desired_directional_shadows;
+    render_model = desired_render_model;
     apply_resolution(wp);
 }
 
@@ -160,15 +163,24 @@ Windowed_Menu_Program_Base :: struct {
     desired_fullscreen := false;
     desired_vsync := false;
     desired_max_fps : u32 = 144;
+    desired_directional_shadows := false;
+    directional_shadows := false;
+    desired_render_model := Renderer_Mode.PBR;
+    render_model := Renderer_Mode.PBR;
 
     volume: float32 = 50.0;
     sensitivity: float32 = 2.1;
     resolution_selection: s32 = 0;
 
     available_resolutions: [..] Resolution_Entry;
+    gltf_file_select: UI_File_Select_State;
+    pending_gltf_path: string;
+    pending_gltf_load: bool;
 }
 
 deinit :: (using wmpb : *Windowed_Menu_Program_Base) {
+    ui_file_select_destroy(*gltf_file_select);
+    if pending_gltf_path.count free(pending_gltf_path);
     deinit(*base);
     for available_resolutions free(it.label);
     array_free(available_resolutions);
@@ -206,6 +218,8 @@ init_menu_defaults :: (using wp: *Windowed_Menu_Program_Base) {
     desired_fullscreen = fullscreen;
     desired_vsync = vsync;
     desired_max_fps = max_fps;
+    desired_directional_shadows = directional_shadows;
+    desired_render_model = render_model;
 }
 
 // common ui widgets, move to the ui submodule later.
@@ -334,6 +348,10 @@ pop_centered_layout :: () {
     ui_pop_layout();
 }
 
+render_model_labels :: () -> [] string {
+    return string.["Vertex Color", "Blinn-Phong", "PBR"];
+}
+
 // a full-screen dark overlay
 draw_overlay_background :: (alpha: float32 = 0.75) {
     ctx := ui_ctx;
@@ -365,6 +383,11 @@ render_main_menu :: (using wp : *Windowed_Menu_Program) {
 
     if ui_menu_button("Start", GREEN_NORMAL, GREEN_HOVER, GREEN_ACTIVE) {
         toggle_menu(wp);
+    }
+
+    if ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
+        menu_return_to = .MAIN;
+        current_menu = .OPEN_MODEL;
     }
 
     if ui_menu_button("Graphics Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
@@ -410,6 +433,15 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
     ui_checkbox("VSync", *desired_vsync);
 
     ui_spacing(4);
+    ui_checkbox("Directional Shadows", *desired_directional_shadows);
+
+    ui_spacing(4);
+    render_model_selection := cast(s32) desired_render_model;
+    if ui_dropdown("Rendering Model", render_model_labels(), *render_model_selection) {
+        desired_render_model = cast(Renderer_Mode) render_model_selection;
+    }
+
+    ui_spacing(4);
     desired_max_fps_s32 := cast(s32) desired_max_fps;
     if ui_slider_int("Max FPS", *desired_max_fps_s32, 30, 512) {
         desired_max_fps = cast(u32) desired_max_fps_s32;
@@ -433,6 +465,31 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
     }
 
     ui_end_row();
+
+    pop_centered_layout();
+
+    draw_version_footer();
+}
+
+render_open_model_menu :: (using wp : *Windowed_Menu_Program) {
+    content_y := draw_page_header("Open Model");
+
+    push_centered_layout(640.0, content_y, 40.0, 10.0, 18.0);
+
+    if ui_file_select("Model File", *gltf_file_select, "data/models") {
+        if pending_gltf_path.count free(pending_gltf_path);
+        pending_gltf_path = copy_string(gltf_file_select.selected_path);
+        normalize_slashes(pending_gltf_path);
+        pending_gltf_load = true;
+        current_menu = .NONE;
+        hide_cursor(wp);
+    }
+
+    ui_spacing(20);
+
+    if ui_button_colored("Back", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
+        current_menu = menu_return_to;
+    }
 
     pop_centered_layout();
 
@@ -536,6 +593,11 @@ render_in_game_menu :: (using wp : *Windowed_Menu_Program) {
         toggle_menu(wp);
     }
 
+    if ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
+        menu_return_to = .IN_GAME;
+        current_menu = .OPEN_MODEL;
+    }
+
     if ui_menu_button("Graphics Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
         menu_return_to = .IN_GAME;
         current_menu = .GRAPHICS_SETTINGS;
@@ -568,6 +630,8 @@ render_menus :: (using wp : *Windowed_Menu_Program) {
             render_main_menu(wp);
         case .IN_GAME;
             render_in_game_menu(wp);
+        case .OPEN_MODEL;
+            render_open_model_menu(wp);
         case .GRAPHICS_SETTINGS;
             render_graphics_settings(wp);
         case .USER_SETTINGS;
@@ -590,6 +654,8 @@ save_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_int(*configuration, "graphics", "resolution", resolution_selection);
     set_bool(*configuration, "graphics", "fullscreen", desired_fullscreen);
     set_bool(*configuration, "graphics", "vsync", desired_vsync);
+    set_bool(*configuration, "graphics", "directional_shadows", desired_directional_shadows);
+    set_int(*configuration, "graphics", "render_model", cast(int) desired_render_model);
     set_int(*configuration, "graphics", "max_fps", cast(int) desired_max_fps);
     set_float(*configuration, "input", "sensitivity", sensitivity);
     set_bool(*configuration, "crosshair", "enabled", crosshair_settings.enabled);
@@ -622,6 +688,18 @@ load_menu_settings :: (using wp: *Windowed_Menu_Program) {
     vs, ok_vs := get_bool(*configuration, "graphics", "vsync");
     if ok_vs {
         desired_vsync = vs;
+    }
+
+    shadows, ok_shadows := get_bool(*configuration, "graphics", "directional_shadows");
+    if ok_shadows {
+        desired_directional_shadows = shadows;
+        directional_shadows = shadows;
+    }
+
+    render_model_int, ok_render_model := get_int(*configuration, "graphics", "render_model");
+    if ok_render_model && render_model_int >= 0 && render_model_int <= cast(int) Renderer_Mode.PBR {
+        desired_render_model = cast(Renderer_Mode) render_model_int;
+        render_model = desired_render_model;
     }
 
     fps, ok_fps := get_int(*configuration, "graphics", "max_fps");

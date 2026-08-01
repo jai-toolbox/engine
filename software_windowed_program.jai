@@ -19,6 +19,7 @@
         width: s32;
         height: s32;
         pixels: [] u32;
+        depth: [] u32;
         bitmap_info: BITMAPINFO;
     }
 
@@ -31,6 +32,8 @@
     }
 
     Software_Windowed_Program :: struct {
+        using #as lp : Looping_Program;
+
         window: HWND;
         framebuffer: Software_Framebuffer;
         recording: Software_Window_Recording;
@@ -49,6 +52,7 @@
     active_software_windowed_program: *Software_Windowed_Program;
 
     init :: (using swp: *Software_Windowed_Program) -> bool {
+        init(*lp, max_fps);
         init_framebuffer(*framebuffer, framebuffer_width, framebuffer_height);
 
         class_name_w := software_to_wide_temp(class_name);
@@ -85,7 +89,9 @@
 
     deinit :: (using swp: *Software_Windowed_Program) {
         array_free(framebuffer.pixels);
+        array_free(framebuffer.depth);
         array_free(recording.framebuffer.pixels);
+        array_free(recording.framebuffer.depth);
         if recording.directory.count > 0 free(recording.directory);
         if active_software_windowed_program == swp active_software_windowed_program = null;
     }
@@ -94,6 +100,7 @@
         fb.width = width;
         fb.height = height;
         array_resize(*fb.pixels, width * height);
+        array_resize(*fb.depth, width * height);
 
         fb.bitmap_info = .{};
         fb.bitmap_info.bmiHeader.biSize = size_of(BITMAPINFOHEADER);
