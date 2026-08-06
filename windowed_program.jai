@@ -81,7 +81,9 @@ init :: (using wp: *Windowed_Program) {
 
     set_vsync(vsync);
 
-    if !Sound_Player.sound_player_init(.{}) {
+    sound_config: Sound_Player.Sound_Player_Config;
+    sound_config.seconds_to_fill_ahead = 0.10;
+    if !Sound_Player.sound_player_init(sound_config) {
         print("Failed to initialize sound player!\n");
     }
 
