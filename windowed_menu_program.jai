@@ -17,7 +17,7 @@ Current_Menu :: enum {
 #scope_export
 
 
-Resolution_Entry :: struct {
+Fullscreen_Resolution_Entry :: struct {
     width:  s32;
     height: s32;
     label:  string;
@@ -29,9 +29,9 @@ Resolution_Entry :: struct {
     EnumDisplaySettingsW :: (lpszDeviceName: *u16, iModeNum: u32, lpDevMode: *DEVMODEW) -> s32 #foreign _user32_enum;
 }
 
-enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
-    for available_resolutions  free(it.label);
-    array_reset(*available_resolutions);
+enumerate_fullscreen_resolutions :: (using wp: *Windowed_Menu_Program) {
+    for available_fullscreen_resolutions  free(it.label);
+    array_reset(*available_fullscreen_resolutions);
 
     #if OS == .WINDOWS {
         native_w : s32 = 0;
@@ -90,56 +90,69 @@ enumerate_resolutions :: (using wp: *Windowed_Menu_Program) {
 
         for s : seen {
             label := sprint("%x%", s.w, s.h);
-            array_add(*available_resolutions, .{s.w, s.h, label});
+            array_add(*available_fullscreen_resolutions, .{s.w, s.h, label});
         }
 
-        // find current resolution in the list
-        resolution_selection = 0;
-        for i : 0..available_resolutions.count-1 {
-            if available_resolutions[i].width == window_width && available_resolutions[i].height == window_height {
-                resolution_selection = cast(s32) i;
+        // Fullscreen defaults to the display's current/native mode. Windowed
+        // dimensions are deliberately unrelated to this selection.
+        fullscreen_resolution_selection = 0;
+        for i : 0..available_fullscreen_resolutions.count-1 {
+            if available_fullscreen_resolutions[i].width == native_w && available_fullscreen_resolutions[i].height == native_h {
+                fullscreen_resolution_selection = cast(s32) i;
                 break;
             }
         }
     }
 
-    if available_resolutions.count == 0 {
-        array_add(*available_resolutions, .{1920, 1080, "1920x1080"});
-        array_add(*available_resolutions, .{1280, 720,  "1280x720"});
-        array_add(*available_resolutions, .{640,  480,  "640x480"});
+    if available_fullscreen_resolutions.count == 0 {
+        array_add(*available_fullscreen_resolutions, .{1920, 1080, sprint("1920x1080")});
+        array_add(*available_fullscreen_resolutions, .{1280, 720,  sprint("1280x720")});
+        array_add(*available_fullscreen_resolutions, .{640,  480,  sprint("640x480")});
     }
 }
 
-apply_resolution :: (using wp: *Windowed_Menu_Program_Base) {
+apply_fullscreen_resolution :: (using wp: *Windowed_Menu_Program_Base) {
+    if !fullscreen return;
+    if fullscreen_resolution_selection < 0 ||
+       fullscreen_resolution_selection >= cast(s32) available_fullscreen_resolutions.count return;
+
+    fullscreen_resolution := available_fullscreen_resolutions[fullscreen_resolution_selection];
+
     #if OS == .WINDOWS {
         win32 :: #import "Windows";
 
-        if resolution_selection >= 0 && resolution_selection < cast(s32) available_resolutions.count {
-            new_w := available_resolutions[resolution_selection].width;
-            new_h := available_resolutions[resolution_selection].height;
-
-            if new_w != window_width || new_h != window_height {
-                if !fullscreen {
-                    style   := win32.GetWindowLongW(window, win32.GWL_STYLE);
-                    ex_style := win32.GetWindowLongW(window, win32.GWL_EXSTYLE);
-
-                    rect: win32.RECT;
-                    rect.left   = 0;
-                    rect.top    = 0;
-                    rect.right  = new_w;
-                    rect.bottom = new_h;
-                    win32.AdjustWindowRectEx(*rect, cast(u32) style, 0, xx ex_style);
-
-                    adjusted_w := rect.right - rect.left;
-                    adjusted_h := rect.bottom - rect.top;
-
-                    win32.SetWindowPos(window, null, 0, 0, adjusted_w, adjusted_h, win32.SWP_NOMOVE | win32.SWP_NOZORDER | win32.SWP_FRAMECHANGED);
-                }
-
-                window_width  = new_w;
-                window_height = new_h;
-            }
+        display_mode: DEVMODEW;
+        display_mode.dmSize       = size_of(type_of(display_mode));
+        display_mode.dmPelsWidth  = cast(u32) fullscreen_resolution.width;
+        display_mode.dmPelsHeight = cast(u32) fullscreen_resolution.height;
+        display_mode.dmBitsPerPel = 32;
+        display_mode.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
+        if ChangeDisplaySettingsW(*display_mode, CDS_FULLSCREEN) == DISP_CHANGE_SUCCESSFUL {
+            win32.SetWindowPos(
+                window,
+                win32.HWND_TOP,
+                0,
+                0,
+                fullscreen_resolution.width,
+                fullscreen_resolution.height,
+                win32.SWP_FRAMECHANGED
+            );
+            window_width  = fullscreen_resolution.width;
+            window_height = fullscreen_resolution.height;
+        } else {
+            log("Could not apply fullscreen resolution %x%", fullscreen_resolution.width, fullscreen_resolution.height);
         }
+    } else #if OS == .LINUX {
+        X11 :: #import "X11";
+        X11.XResizeWindow(
+            X11.x_global_display,
+            window,
+            cast(u32) fullscreen_resolution.width,
+            cast(u32) fullscreen_resolution.height
+        );
+        X11.XFlush(X11.x_global_display);
+        window_width  = fullscreen_resolution.width;
+        window_height = fullscreen_resolution.height;
     }
 }
 
@@ -151,7 +164,7 @@ apply_graphics_settings :: (using wp: *Windowed_Menu_Program_Base) {
     max_fps = desired_max_fps;
     directional_shadows = desired_directional_shadows;
     render_model = desired_render_model;
-    apply_resolution(wp);
+    apply_fullscreen_resolution(wp);
 }
 
 // you can just "using" this in your own game if you want a basic thing that helps you 
@@ -170,9 +183,9 @@ Windowed_Menu_Program_Base :: struct {
 
     volume: float32 = 50.0;
     sensitivity: float32 = 2.1;
-    resolution_selection: s32 = 0;
+    fullscreen_resolution_selection: s32 = 0;
 
-    available_resolutions: [..] Resolution_Entry;
+    available_fullscreen_resolutions: [..] Fullscreen_Resolution_Entry;
     gltf_file_select: UI_File_Select_State;
     pending_gltf_path: string;
     pending_gltf_load: bool;
@@ -182,8 +195,8 @@ deinit :: (using wmpb : *Windowed_Menu_Program_Base) {
     ui_file_select_destroy(*gltf_file_select);
     if pending_gltf_path.count free(pending_gltf_path);
     deinit(*base);
-    for available_resolutions free(it.label);
-    array_free(available_resolutions);
+    for available_fullscreen_resolutions free(it.label);
+    array_free(available_fullscreen_resolutions);
 }
 
 
@@ -419,15 +432,15 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
 
     push_centered_layout(400.0, content_y, 40.0, 10.0, 18.0);
 
-    if available_resolutions.count > 0 {
-        push_allocator(temp);
-        labels := NewArray(available_resolutions.count, string);
-        for available_resolutions  labels[it_index] = it.label;
-        ui_dropdown("Resolution", labels, *resolution_selection);
-    }
-
-    ui_spacing(4);
     ui_checkbox("Fullscreen", *desired_fullscreen);
+
+    if desired_fullscreen && available_fullscreen_resolutions.count > 0 {
+        ui_spacing(4);
+        push_allocator(temp);
+        labels := NewArray(available_fullscreen_resolutions.count, string);
+        for available_fullscreen_resolutions labels[it_index] = it.label;
+        ui_dropdown("Fullscreen Resolution", labels, *fullscreen_resolution_selection);
+    }
 
     ui_spacing(4);
     ui_checkbox("VSync", *desired_vsync);
@@ -651,8 +664,14 @@ apply_sfx_volume :: (using wp: *Windowed_Menu_Program_Base) {
 
 save_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_float(*configuration, "audio", "volume", volume);
-    set_int(*configuration, "graphics", "resolution", resolution_selection);
+    remove_configuration_value(*configuration, "graphics", "resolution");
     set_bool(*configuration, "graphics", "fullscreen", desired_fullscreen);
+    if fullscreen_resolution_selection >= 0 &&
+       fullscreen_resolution_selection < cast(s32) available_fullscreen_resolutions.count {
+        fullscreen_resolution := available_fullscreen_resolutions[fullscreen_resolution_selection];
+        set_int(*configuration, "graphics", "fullscreen_resolution_width", fullscreen_resolution.width);
+        set_int(*configuration, "graphics", "fullscreen_resolution_height", fullscreen_resolution.height);
+    }
     set_bool(*configuration, "graphics", "vsync", desired_vsync);
     set_bool(*configuration, "graphics", "directional_shadows", desired_directional_shadows);
     set_int(*configuration, "graphics", "render_model", cast(int) desired_render_model);
@@ -675,9 +694,24 @@ load_menu_settings :: (using wp: *Windowed_Menu_Program) {
         apply_sfx_volume(wp);
     }
 
-    res_idx, ok_res := get_int(*configuration, "graphics", "resolution");
-    if ok_res && res_idx >= 0 && res_idx < cast(int) available_resolutions.count {
-        resolution_selection = cast(s32) res_idx;
+    fullscreen_width, fullscreen_width_was_loaded := get_int(*configuration, "graphics", "fullscreen_resolution_width");
+    fullscreen_height, fullscreen_height_was_loaded := get_int(*configuration, "graphics", "fullscreen_resolution_height");
+    if fullscreen_width_was_loaded && fullscreen_height_was_loaded {
+        for available_fullscreen_resolutions {
+            if it.width == fullscreen_width && it.height == fullscreen_height {
+                fullscreen_resolution_selection = cast(s32) it_index;
+                break;
+            }
+        }
+    } else {
+        // Read the old index once for compatibility, but only the explicit
+        // fullscreen width/height keys are written from now on.
+        legacy_resolution_index, legacy_resolution_was_loaded := get_int(*configuration, "graphics", "resolution");
+        if legacy_resolution_was_loaded &&
+           legacy_resolution_index >= 0 &&
+           legacy_resolution_index < cast(int) available_fullscreen_resolutions.count {
+            fullscreen_resolution_selection = cast(s32) legacy_resolution_index;
+        }
     }
 
     fs, ok_fs := get_bool(*configuration, "graphics", "fullscreen");

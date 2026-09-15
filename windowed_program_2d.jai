@@ -66,7 +66,7 @@ init :: (using,except(window_name) wp2 : *Windowed_Program_2D, window_name : str
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
 
-    enumerate_resolutions(*wp2.wmp);
+    enumerate_fullscreen_resolutions(*wp2.wmp);
     load_menu_settings(*wp2.wmp);
 }
 

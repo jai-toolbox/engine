@@ -165,7 +165,7 @@ main :: () {
     init(*wmp);
     defer deinit(*wmp);
 
-    enumerate_resolutions(*wmp);
+    enumerate_fullscreen_resolutions(*wmp);
     init_menu_defaults(*wmp);
 
     while !wmp.end_program {
@@ -185,11 +185,11 @@ main :: () {
 
 Useful menu calls:
 
-- `enumerate_resolutions(*wmp)` fills `available_resolutions`.
+- `enumerate_fullscreen_resolutions(*wmp)` fills `available_fullscreen_resolutions`.
 - `init_menu_defaults(*wmp)` copies current graphics settings into pending menu settings.
 - `toggle_menu(*wmp)` opens/closes the in-game menu.
 - `render_menus(*wmp)` renders the active menu.
-- `apply_graphics_settings(*wmp)` applies fullscreen, vsync, resolution, and max FPS.
+- `apply_graphics_settings(*wmp)` applies fullscreen, fullscreen resolution, vsync, and max FPS. Windowed size is controlled by resizing the window.
 - `save_settings(*wmp)` and `load_menu_settings(*wmp)` persist menu settings.
 
 ## Windowed_Program_2D

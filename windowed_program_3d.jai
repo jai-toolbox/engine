@@ -1673,8 +1673,9 @@ init :: (using wp3 : *Windowed_Program_3D) {
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
 
-    // enumerate available resolutions before loading settings
-    enumerate_resolutions(*wp3.wp);
+    // Enumerate fullscreen display modes before loading settings. Windowed
+    // dimensions continue to follow ordinary user-driven window resizing.
+    enumerate_fullscreen_resolutions(*wp3.wp);
 
     // menu_fullscreen_checkbox = fullscreen;
     // menu_vsync_checkbox = vsync;

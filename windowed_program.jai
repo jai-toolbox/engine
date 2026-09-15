@@ -46,8 +46,7 @@ Windowed_Program :: struct {
     // custom UI system replaces GetRect
     ui_context: UI_Context;
     ui_font: MSDF_Font;
-    ui_msdf_renderer: Multi_Channel_Signed_Distance_Field_Text_Renderer;
-    ui_rect_renderer: Absolute_Position_Color_Alpha_Renderer;
+    ui_renderer: OpenGL_UI_Renderer;
     ui_initialized := false;
 
     sound_catalog : Table(u8, Sound_Player.Sound_Data);
@@ -76,14 +75,12 @@ init :: (using wp: *Windowed_Program) {
 
     init(*absolute_position_color_alpha_renderer);
 
-    // initialize custom UI system
-    #import "stb_image";
-    stbi_set_flip_vertically_on_load(1);
-    ui_font = msdf_font_load("data/fonts/pt_serif/atlas.json", "data/fonts/pt_serif/atlas.png");
-    stbi_set_flip_vertically_on_load(0);
-    init(*ui_msdf_renderer);
-    init(*ui_rect_renderer);
-    ui_init(*ui_context, *ui_font, *ui_msdf_renderer, *ui_rect_renderer);
+    // The widget/layout core produces draw data. This program selects the
+    // OpenGL renderer backend to consume it.
+    ui_font = load_msdf_font_metrics("data/fonts/pt_serif/atlas.json");
+    if !init(*ui_renderer, *ui_font, "data/fonts/pt_serif/atlas.png") return;
+    ui_init(*ui_context, *ui_font);
+    attach_opengl_render_target_backend_to_ui_context(*ui_renderer);
     ui_initialized = true;
 
     set_vsync(vsync);
@@ -115,6 +112,7 @@ deinit :: (using wp: *Windowed_Program) {
 
     if ui_initialized {
         ui_destroy(*ui_context);
+        deinit(*ui_renderer);
         deinit(*ui_font);
     }
 
@@ -364,6 +362,7 @@ ui_begin :: (using wp: *Windowed_Program) {
 // end the UI frame, call this after all widget calls, before swap_buffers
 ui_end :: (using wp: *Windowed_Program) {
     ui_end_frame();
+    render_ui_draw_data_with_opengl(*ui_renderer, *ui_context);
 }
 
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
