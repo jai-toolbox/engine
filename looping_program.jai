@@ -47,6 +47,8 @@ Looping_Program :: struct {
     iteration := 0;
 }
 
+Loop_Idle_Proc :: #type (user_data: *void);
+
 #if OS == .WINDOWS {
     #import "Windows";
 
@@ -131,8 +133,14 @@ mark_frame_start :: (using lp: *Looping_Program) {
 }
 
 // must be called to maintain target frame rate
-sleep_to_maintain_max_fps :: (using lp: *Looping_Program) {
+sleep_to_maintain_max_fps :: (
+    using lp: *Looping_Program,
+    idle_proc: Loop_Idle_Proc = null,
+    idle_context: *void = null
+) {
     while true {
+        if idle_proc != null idle_proc(idle_context);
+
         current_time := current_time_monotonic();
         remaining_sec := to_float64_seconds(next_frame_end - current_time);
         if remaining_sec <= 0 break;

@@ -29,7 +29,7 @@ Fullscreen_Resolution_Entry :: struct {
     EnumDisplaySettingsW :: (lpszDeviceName: *u16, iModeNum: u32, lpDevMode: *DEVMODEW) -> s32 #foreign _user32_enum;
 }
 
-enumerate_fullscreen_resolutions :: (using wp: *Windowed_Menu_Program) {
+enumerate_fullscreen_resolutions :: (using wp: *Windowed_Menu_Program_Base) {
     for available_fullscreen_resolutions  free(it.label);
     array_reset(*available_fullscreen_resolutions);
 

@@ -6,6 +6,46 @@ Sound_Player :: #import "Sound_Player";
 #import "Hash_Table";
 #import "tbx/assets";
 
+#if OS == .LINUX {
+    linux_sound_mixer_thread: Thread;
+    linux_sound_mixer_should_exit := false;
+
+    linux_sound_mixer_update :: (thread: *Thread) -> s64 {
+        while !atomic_load(*linux_sound_mixer_should_exit) {
+            // Sound_Player protects live-stream mutation with this mutex, but
+            // its built-in ALSA mixer does not take it while reading those
+            // streams. Use the same mutex here so stream retirement and mixing
+            // cannot race.
+            lock(*Sound_Player.sound_mutex);
+            Sound_Player.update_from_async_thread(true);
+            unlock(*Sound_Player.sound_mutex);
+
+            sleep_milliseconds(1);
+        }
+
+        return 0;
+    }
+
+    start_linux_sound_mixer :: () -> bool {
+        if linux_sound_mixer_thread.index return true;
+
+        atomic_store(*linux_sound_mixer_should_exit, false);
+        if !thread_init(*linux_sound_mixer_thread, linux_sound_mixer_update, name="Sound player (synchronized)") {
+            return false;
+        }
+        thread_start(*linux_sound_mixer_thread);
+        return true;
+    }
+
+    stop_linux_sound_mixer :: () {
+        if !linux_sound_mixer_thread.index return;
+
+        atomic_store(*linux_sound_mixer_should_exit, true);
+        thread_is_done(*linux_sound_mixer_thread, -1);
+        thread_deinit(*linux_sound_mixer_thread);
+    }
+}
+
 load_sound :: (path : string) -> Sound_Player.Sound_Data {
     asset_loaded, asset_data := load_asset_copy(path);
     if !asset_loaded exit(1);

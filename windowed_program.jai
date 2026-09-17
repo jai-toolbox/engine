@@ -87,9 +87,22 @@ init :: (using wp: *Windowed_Program) {
 
     sound_config: Sound_Player.Sound_Player_Config;
     sound_config.update_from_a_thread = sound_mixer_updates_on_background_thread;
+    #if OS == .LINUX {
+        // The engine supplies a synchronized Linux mixer thread below.
+        sound_config.update_from_a_thread = false;
+    }
     sound_config.seconds_to_fill_ahead = 0.10;
-    if !Sound_Player.sound_player_init(sound_config) {
+    sound_player_initialized := Sound_Player.sound_player_init(sound_config);
+    if !sound_player_initialized {
         print("Failed to initialize sound player!\n");
+    }
+    #if OS == .LINUX {
+        if sound_player_initialized && sound_mixer_updates_on_background_thread {
+            if !start_linux_sound_mixer() {
+                print("Failed to initialize synchronized Linux sound mixer!\n");
+                sound_mixer_updates_on_background_thread = false;
+            }
+        }
     }
 
     configuration.config_path = "data/cfg.ini";
@@ -99,6 +112,7 @@ init :: (using wp: *Windowed_Program) {
 
 deinit :: (using wp: *Windowed_Program) {
 
+    #if OS == .LINUX stop_linux_sound_mixer();
     Sound_Player.sound_player_shutdown();
 
     for * entry, key : sound_catalog {
