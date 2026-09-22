@@ -214,6 +214,8 @@ Windowed_Menu_Program :: struct {
 
     current_menu := Current_Menu.MAIN;
     menu_return_to := Current_Menu.MAIN;
+    show_open_model_menu := true;
+    show_scene_graphics_settings := true;
 }
 
 
@@ -398,7 +400,7 @@ render_main_menu :: (using wp : *Windowed_Menu_Program) {
         toggle_menu(wp);
     }
 
-    if ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
+    if show_open_model_menu && ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
         menu_return_to = .MAIN;
         current_menu = .OPEN_MODEL;
     }
@@ -445,13 +447,15 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
     ui_spacing(4);
     ui_checkbox("VSync", *desired_vsync);
 
-    ui_spacing(4);
-    ui_checkbox("Directional Shadows", *desired_directional_shadows);
+    if show_scene_graphics_settings {
+        ui_spacing(4);
+        ui_checkbox("Directional Shadows", *desired_directional_shadows);
 
-    ui_spacing(4);
-    render_model_selection := cast(s32) desired_render_model;
-    if ui_dropdown("Rendering Model", render_model_labels(), *render_model_selection) {
-        desired_render_model = cast(Renderer_Mode) render_model_selection;
+        ui_spacing(4);
+        render_model_selection := cast(s32) desired_render_model;
+        if ui_dropdown("Rendering Model", render_model_labels(), *render_model_selection) {
+            desired_render_model = cast(Renderer_Mode) render_model_selection;
+        }
     }
 
     ui_spacing(4);
@@ -606,7 +610,7 @@ render_in_game_menu :: (using wp : *Windowed_Menu_Program) {
         toggle_menu(wp);
     }
 
-    if ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
+    if show_open_model_menu && ui_menu_button("Open Model", BLUE_NORMAL, BLUE_HOVER, BLUE_ACTIVE) {
         menu_return_to = .IN_GAME;
         current_menu = .OPEN_MODEL;
     }

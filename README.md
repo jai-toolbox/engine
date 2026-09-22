@@ -7,7 +7,8 @@ This module is a small stack of window and loop helpers. You can use the lowest 
 - `Windowed_Program`: Use when you want an OpenGL window with UI, audio, assets, configuration, loop timing, and a basic renderer initialized.
 - `Windowed_Menu_Program`: Use when you want `Windowed_Program` plus common game menus for resolution, fullscreen, vsync, max FPS, and user settings.
 - `Windowed_Program_2D`: Use when you want a simple 2D OpenGL scene shell with a menu window, 2D camera, color renderer, and renderable list.
-- `Windowed_Program_3D`: Use when you want a 3D OpenGL scene shell with a menu window, camera, movement, mouse look, color renderer, and renderable list.
+- `Windowed_Program_3D_Base`: Use when you want menus, camera movement, and mouse look while owning your renderer and scene.
+- `Windowed_Program_3D`: A full scene example built on the base, with color, Blinn-Phong, PBR, and other render paths.
 
 OpenGL window layers expect the project data directory to exist, including UI font assets such as `data/fonts/pt_serif/atlas.json` and `atlas.png`. This is bad and I need a better method for handling this
 
@@ -231,9 +232,40 @@ Notes:
 - `per_frame_update(*wp2)` updates the base window/menu/input and 2D camera.
 - `render_scene(*wp2)` renders the 2D scene using the built-in renderer.
 
+## Windowed_Program_3D_Base
+
+Import `tbx/engine/windowed_program_3d_base` and embed this type for a new 3D program. This import loads the camera and menu shell without the full scene example's animation and character controller modules. `init` sets up the window, menus, and camera input. `per_frame_update` handles mouse look and movement and stores `world_to_camera` and `camera_to_clip` on the base. Your program initializes its own renderer, uploads those matrices, queues its objects, and renders its menu UI.
+
+```jai
+#import "Basic";
+#import "GL";
+#import "tbx/engine/windowed_program_3d_base";
+#import "tbx/opengl";
+
+My_Program :: struct {
+    using #as wp3: Windowed_Program_3D_Base;
+    renderer: Camera_Per_Object_Transform_Texture_Renderer;
+}
+
+init :: (using program: *My_Program) {
+    init(*wp3);
+    init(*renderer);
+}
+
+per_frame_update :: (using program: *My_Program) {
+    per_frame_update(*wp3);
+    glUseProgram(renderer.shader_program_gl_handle);
+    set_world_to_camera_uniform(*renderer, world_to_camera);
+    set_camera_to_clip_uniform(*renderer, camera_to_clip);
+    glUseProgram(0);
+}
+```
+
+Implement `render_scene(*program)` to clear the window, queue and render your objects, call `render_menus(*wp3.wp)` when a menu is open, and swap buffers. [The light baking entry point](../../main.jai) shows the complete loop and renderer lifetime.
+
 ## Windowed_Program_3D
 
-Use this when you want a 3D OpenGL scene shell with camera movement, mouse look, menus, and a color renderer.
+Use this sample implementation when you want its built-in scene loading and render paths, or to inspect how it fills in `Windowed_Program_3D_Base` with renderers and draw calls.
 
 ```jai
 #import "Basic";
@@ -269,7 +301,7 @@ main :: () {
 
 Notes:
 
-- `Windowed_Program_3D` uses `Windowed_Menu_Program`.
+- `Windowed_Program_3D` embeds `Windowed_Program_3D_Base`, which embeds `Windowed_Menu_Program`.
 - `camera_mode` defaults to `.FIRST_PERSON`.
 - `movement_mode` controls how the camera/player movement is interpreted.
 - `camera_look_active` controls mouse-look behavior.
