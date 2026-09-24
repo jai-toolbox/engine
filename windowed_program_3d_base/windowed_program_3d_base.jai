@@ -249,7 +249,9 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     for Input.events_this_frame {
         if it.type == .KEYBOARD && it.key_pressed {
             if it.key_code == .ESCAPE {
-                if !camera_look_active {
+                if current_menu == .CROSSHAIR_EDITOR {
+                    current_menu = .USER_SETTINGS;
+                } else if !camera_look_active {
                     // if mouse mode is active, pressing ESC should re-lock the camera first
                     camera_look_active = true;
                 } else {

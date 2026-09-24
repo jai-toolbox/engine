@@ -26,6 +26,12 @@ The examples are deliberately separated by render path:
 
 `common.jai` contains only presentation boilerplate and the GPU resources shared by multiple paths. There is intentionally no all-renderers implementation; applications choose a focused program or copy the closest one.
 
+Every program includes the shared crosshair menu and geometry editor through
+`Windowed_Program_3D_Base`. Crosshairs are loaded from `data/crosshairs` as OBJ
+geometry, and missing built-in crosshairs are generated there on first use. Open
+**User Settings** to select an OBJ or create and edit one. The selected geometry
+is also rendered over the scene by the common presentation pass.
+
 Minimal usage:
 
 ```jai

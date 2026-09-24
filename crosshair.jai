@@ -1,237 +1,169 @@
-Crosshair_Type :: enum {
-    DOT;
-    CROSS;
-    X;
-    CROSS_MISSING_TOP;
-    CROSS_WITH_HOLE;
-    X_WITH_HOLE;
-    UPWARD_CARET;
-    CROSS_MISSING_TOP_BOTTOM_WITH_HOLE;
-    RING;
-    CUSTOM;
-}
+// All selectable crosshairs are OBJ files. The nine defaults are generated
+// when missing, so the installation need not carry preset OBJ assets.
+DEFAULT_CROSSHAIR_FILENAME :: "cross_with_hole.obj";
 
 Crosshair_Settings :: struct {
     enabled := true;
-    kind := Crosshair_Type.CROSS_WITH_HOLE;
     color: Vector4 = .{0.95, 0.95, 0.95, 0.9};
-    size: float32 = 1.0;
 }
 
-Crosshair_Custom_State :: struct {
+Crosshair_File_State :: struct {
     path: string;
+    library: Crosshair_Library;
+    selection: s32 = -1;
     geometry: Indexed_Triangle_Positions;
     loaded: bool;
     warned_missing: bool;
 }
 
-Crosshair_Preview_State :: struct {
-    visible: bool;
-    rect: UI_Rect;
+Crosshair_Monitor_Scale :: struct {
+    pixels_per_inch_x: float32;
+    pixels_per_inch_y: float32;
+    valid: bool;
 }
 
-CROSSHAIR_BASE_NDC_SIZE :: 0.1;
-
-crosshair_type_labels :: () -> [] string {
-    return string.[
-        "Dot",
-        "Cross",
-        "X",
-        "Cross missing top",
-        "Cross with hole",
-        "X with hole",
-        "Upward caret",
-        "Cross missing top/bottom with hole",
-        "Ring",
-        "Custom OBJ",
-    ];
+measure_crosshair_monitor_scale :: () -> Crosshair_Monitor_Scale {
+    profiles := find_connected_monitor_profiles();
+    defer free_monitor_profiles(*profiles);
+    if profiles.count == 0 return .{};
+    profile := profiles[0];
+    if !profile.mode_is_observed || profile.width_mm <= 0 || profile.height_mm <= 0 return .{};
+    return .{
+        pixels_per_inch_x = cast(float32) profile.mode_width * 25.4 / cast(float32) profile.width_mm,
+        pixels_per_inch_y = cast(float32) profile.mode_height * 25.4 / cast(float32) profile.height_mm,
+        valid = true,
+    };
 }
 
-create_crosshair_geometry :: (kind: Crosshair_Type) -> Indexed_Triangle_Positions {
-    result: Indexed_Triangle_Positions;
-
-    if kind == {
-        case .DOT;
-            result = create_circle(.{0, 0, 0}, .{0, 0, 1}, 0.065, 24);
-
-        case .CROSS;
-            append_crosshair_cross_solid(*result, 0.39, 0.11, 0.0);
-
-        case .X;
-            append_crosshair_cross_solid(*result, 0.39, 0.11, PI * 0.25);
-
-        case .CROSS_MISSING_TOP;
-            append_crosshair_cross_with_gap(*result, 0.055, 0.39, 0.11, true, false, false, false, 0.0);
-            append_crosshair_center_cap(*result, 0.11, 0.0);
-
-        case .CROSS_WITH_HOLE;
-            append_crosshair_cross_with_gap(*result, 0.17, 0.43, 0.10, false, false, false, false, 0.0);
-
-        case .X_WITH_HOLE;
-            append_crosshair_cross_with_gap(*result, 0.17, 0.43, 0.10, false, false, false, false, PI * 0.25);
-
-        case .UPWARD_CARET;
-            append_crosshair_segment(*result, .{-0.055, -0.055}, .{-0.34, -0.34}, 0.10);
-            append_crosshair_segment(*result, .{ 0.055, -0.055}, .{ 0.34, -0.34}, 0.10);
-
-        case .CROSS_MISSING_TOP_BOTTOM_WITH_HOLE;
-            append_crosshair_cross_with_gap(*result, 0.17, 0.43, 0.10, true, true, false, false, 0.0);
-
-        case .RING;
-            result = create_annulus(.{0, 0, 0}, .{0, 0, 1}, 0.30, 0.42, 48);
-
-        case .CUSTOM;
-            // Custom geometry is loaded and validated separately.
-    }
-
-    return result;
+crosshair_monitor_scale_or_fallback :: (monitor: Crosshair_Monitor_Scale) -> Crosshair_Monitor_Scale {
+    if monitor.valid return monitor;
+    return .{pixels_per_inch_x = 96, pixels_per_inch_y = 96, valid = false};
 }
 
-append_crosshair_cross_solid :: (result: *Indexed_Triangle_Positions, outer: float, thickness: float, rotation: float) {
-    inner := thickness * 0.5;
-    append_crosshair_cross_with_gap(result, inner, outer, thickness, false, false, false, false, rotation);
-    append_crosshair_center_cap(result, thickness, rotation);
+// Older configurations stored a numeric procedural type. Map it to the
+// equivalent shipped OBJ once, then persist only the selected filename.
+legacy_crosshair_preset_filename :: (old_type: int) -> string {
+    if old_type < 0 || old_type >= CROSSHAIR_DEFAULT_COUNT return "";
+    return crosshair_default_filename(cast(s32) old_type);
 }
 
-append_crosshair_center_cap :: (result: *Indexed_Triangle_Positions, size: float, rotation: float) {
-    h := size * 0.5;
-    append_crosshair_polygon(result, Vector2.[
-        rotate2(.{-h, -h}, rotation),
-        rotate2(.{ h, -h}, rotation),
-        rotate2(.{ h,  h}, rotation),
-        rotate2(.{-h,  h}, rotation),
-    ]);
-}
-
-append_crosshair_polygon :: (result: *Indexed_Triangle_Positions, points: [] Vector2) {
-    if points.count < 3 return;
-
-    base := cast(u32) result.positions.count;
-    for p: points array_add(*result.positions, .{p.x, p.y, 0});
-
-    for i: 1..points.count - 2 {
-        array_add(*result.indices, base);
-        array_add(*result.indices, base + cast(u32) i);
-        array_add(*result.indices, base + cast(u32)(i + 1));
-    }
-}
-
-append_crosshair_cross_with_gap :: (
-    result: *Indexed_Triangle_Positions,
-    inner: float,
-    outer: float,
-    thickness: float,
-    skip_up: bool,
-    skip_down: bool,
-    skip_left: bool,
-    skip_right: bool,
-    rotation: float
-) {
-    if !skip_right append_crosshair_segment(result, rotate2(.{inner, 0}, rotation), rotate2(.{outer, 0}, rotation), thickness);
-    if !skip_left  append_crosshair_segment(result, rotate2(.{-inner, 0}, rotation), rotate2(.{-outer, 0}, rotation), thickness);
-    if !skip_up    append_crosshair_segment(result, rotate2(.{0, inner}, rotation), rotate2(.{0, outer}, rotation), thickness);
-    if !skip_down  append_crosshair_segment(result, rotate2(.{0, -inner}, rotation), rotate2(.{0, -outer}, rotation), thickness);
-}
-
-append_crosshair_beam :: (result: *Indexed_Triangle_Positions, cx: float, cy: float, length_: float, thickness: float, rotation: float) {
-    a := rotate2(.{-length_ * 0.5, 0}, rotation) + .{cx, cy};
-    b := rotate2(.{ length_ * 0.5, 0}, rotation) + .{cx, cy};
-    append_crosshair_segment(result, a, b, thickness);
-}
-
-append_crosshair_segment :: (result: *Indexed_Triangle_Positions, a: Vector2, b: Vector2, thickness: float) {
-    dir := b - a;
-    len := length(dir);
-    if len <= 0.0001 return;
-
-    n := Vector2.{-dir.y / len, dir.x / len} * (thickness * 0.5);
-    base := cast(u32) result.positions.count;
-
-    array_add(*result.positions, .{a.x + n.x, a.y + n.y, 0});
-    array_add(*result.positions, .{a.x - n.x, a.y - n.y, 0});
-    array_add(*result.positions, .{b.x - n.x, b.y - n.y, 0});
-    array_add(*result.positions, .{b.x + n.x, b.y + n.y, 0});
-
-    array_add(*result.indices, base + 0);
-    array_add(*result.indices, base + 1);
-    array_add(*result.indices, base + 2);
-    array_add(*result.indices, base + 0);
-    array_add(*result.indices, base + 2);
-    array_add(*result.indices, base + 3);
-}
-
-rotate2 :: (v: Vector2, angle: float) -> Vector2 {
-    c := cos(angle);
-    s := sin(angle);
-    return .{v.x * c - v.y * s, v.x * s + v.y * c};
-}
-
-make_crosshair_render_geometry :: (itp: Indexed_Triangle_Positions, color: Vector4, size: float32) -> Indexed_Triangle_Positions_Color_Alphas {
+make_crosshair_render_geometry :: (itp: Indexed_Triangle_Positions, color: Vector4,
+                                   window_width: float32, window_height: float32,
+                                   monitor: Crosshair_Monitor_Scale) -> Indexed_Triangle_Positions_Color_Alphas {
     result: Indexed_Triangle_Positions_Color_Alphas;
-    scale := CROSSHAIR_BASE_NDC_SIZE * size;
-
-    array_reserve(*result.indices, itp.indices.count);
-    array_reserve(*result.positions, itp.positions.count);
-    array_reserve(*result.rgba_colors, itp.positions.count);
-
+    if window_width <= 0 || window_height <= 0 return result;
+    scale_x := 2.0 * monitor.pixels_per_inch_x / window_width;
+    scale_y := 2.0 * monitor.pixels_per_inch_y / window_height;
     for itp.indices array_add(*result.indices, it);
     for p: itp.positions {
-        array_add(*result.positions, .{p.x * scale, p.y * scale, p.z});
+        array_add(*result.positions, .{p.x * scale_x, p.y * scale_y, p.z});
         array_add(*result.rgba_colors, color);
     }
-
     return result;
 }
 
-make_crosshair_preview_geometry :: (itp: Indexed_Triangle_Positions, color: Vector4, size: float32, preview: UI_Rect) -> Indexed_Triangle_Positions_Color_Alphas {
-    result: Indexed_Triangle_Positions_Color_Alphas;
-
-    pixel_scale := min(ui_ctx.window_w, ui_ctx.window_h) * CROSSHAIR_BASE_NDC_SIZE * size;
-    cx := preview.x + preview.w * 0.5;
-    cy := preview.y + preview.h * 0.5;
-
-    array_reserve(*result.indices, itp.indices.count);
-    array_reserve(*result.positions, itp.positions.count);
-    array_reserve(*result.rgba_colors, itp.positions.count);
-
-    for itp.indices array_add(*result.indices, it);
-    for p: itp.positions {
-        px := cx + p.x * pixel_scale;
-        py := cy - p.y * pixel_scale;
-        ndc_x := (px / ui_ctx.window_w) * 2.0 - 1.0;
-        ndc_y := -((py / ui_ctx.window_h) * 2.0 - 1.0);
-        array_add(*result.positions, .{ndc_x, ndc_y, 0});
-        array_add(*result.rgba_colors, color);
+draw_selected_crosshair_preview :: (state: *Crosshair_File_State,
+                                    settings: Crosshair_Settings,
+                                    monitor_profile: Crosshair_Monitor_Scale,
+                                    rect: UI_Rect) {
+    ui_cmd_rect(rect, .{0.02, 0.02, 0.025, 0.92});
+    ui_cmd_rect_outline(rect, .{0.7, 0.7, 0.75, 0.85});
+    if !state.loaded || state.geometry.indices.count == 0 {
+        ui_cmd_text("No valid crosshair selected", rect.x + 10, rect.y + rect.h * 0.5,
+                    14, .{0.7, 0.7, 0.7, 1});
+        return;
     }
 
-    return result;
+    monitor := crosshair_monitor_scale_or_fallback(monitor_profile);
+    cx := rect.x + rect.w * 0.5;
+    cy := rect.y + rect.h * 0.5;
+    ui_cmd_scissor_push(rect);
+    ui_cmd_rect_outline(.{cx - monitor.pixels_per_inch_x * 0.5,
+                          cy - monitor.pixels_per_inch_y * 0.5,
+                          monitor.pixels_per_inch_x, monitor.pixels_per_inch_y},
+                        .{0.16, 0.21, 0.25, 1});
+
+    positions := NewArray(state.geometry.positions.count, Vector3,, allocator = temp);
+    colors := NewArray(state.geometry.positions.count, Vector4,, allocator = temp);
+    for p: state.geometry.positions {
+        px := cx + p.x * monitor.pixels_per_inch_x;
+        py := cy - p.y * monitor.pixels_per_inch_y;
+        positions[it_index] = .{px / ui_ctx.window_w * 2.0 - 1.0,
+                                1.0 - py / ui_ctx.window_h * 2.0, 0};
+        colors[it_index] = settings.color;
+    }
+    ui_cmd_geometry(positions, colors, state.geometry.indices);
+    ui_cmd_scissor_pop();
 }
 
-load_custom_crosshair :: (state: *Crosshair_Custom_State, config_path: string) {
+load_crosshair_file :: (state: *Crosshair_File_State, path: string) {
     if state.geometry.positions.count > 0 || state.geometry.indices.count > 0 {
         deinit(*state.geometry);
     }
 
     state.loaded = false;
     state.warned_missing = false;
-    state.path = crosshair_path_next_to_config(config_path);
+    new_path := copy_string(path);
+    if state.path.count > 0 free(state.path);
+    state.path = new_path;
 
-    if !asset_exists(state.path) return;
+    if !file_exists(state.path) return;
 
-    obj := load_obj(state.path);
+    contents, opened := read_entire_file(state.path, log_errors = false);
+    if !opened return;
+    defer free(contents);
+    obj := parse_obj(contents);
     defer deinit(*obj);
 
     geom := crosshair_obj_to_itp(*obj);
     valid, reason := validate_crosshair_geometry(*geom);
     if !valid {
-        print("Invalid custom crosshair '%': %\n", state.path, reason);
+        print("Invalid crosshair OBJ '%': %\n", state.path, reason);
         deinit(*geom);
         return;
     }
 
     state.geometry = geom;
     state.loaded = true;
-    print("Loaded custom crosshair '%'\n", state.path);
+    print("Loaded crosshair OBJ '%'\n", state.path);
+}
+
+refresh_crosshair_library :: (state: *Crosshair_File_State,
+                              config_path: string, selected_filename: string = "") {
+    wanted_source := ifx selected_filename.count > 0 then copy_string(selected_filename)
+              else ifx state.path.count > 0 then copy_string(crosshair_obj_filename(state.path))
+              else copy_string(DEFAULT_CROSSHAIR_FILENAME);
+    defer free(wanted_source);
+    wanted := copy_string(crosshair_obj_filename(
+        crosshair_obj_path(crosshair_obj_filename(wanted_source))));
+    defer free(wanted);
+    free_crosshair_library(*state.library);
+    state.library = scan_crosshair_library();
+    legacy := crosshair_path_next_to_config(config_path);
+    if file_exists(legacy) array_add(*state.library.paths, copy_string(legacy));
+
+    state.selection = -1;
+    for i: 0..state.library.paths.count - 1 {
+        if crosshair_obj_filename(state.library.paths[i]) == wanted {
+            state.selection = cast(s32) i;
+            break;
+        }
+    }
+    if state.selection < 0 && state.library.paths.count > 0 state.selection = 0;
+    if state.selection >= 0 {
+        load_crosshair_file(state, state.library.paths[state.selection]);
+    } else {
+        if state.path.count > 0 free(state.path);
+        state.path = "";
+        if state.geometry.positions.count > 0 || state.geometry.indices.count > 0 deinit(*state.geometry);
+        state.loaded = false;
+    }
+}
+
+crosshair_color_from_selected_file :: (state: Crosshair_File_State) -> Vector4 {
+    fallback := Vector4.{0.95, 0.95, 0.95, 0.9};
+    if !state.loaded return fallback;
+    return read_crosshair_obj_color(state.path, fallback);
 }
 
 crosshair_path_next_to_config :: (config_path: string) -> string {
@@ -259,9 +191,20 @@ crosshair_obj_to_itp :: (obj: *Obj_Data) -> Indexed_Triangle_Positions {
         for *face: object.faces {
             if face.face_vertices.count < 3 continue;
 
+            valid_face := true;
+            for *fv: face.face_vertices {
+                if fv.position_index < 0 || fv.position_index >= obj.all_positions.count {
+                    valid_face = false;
+                    break;
+                }
+            }
+            if !valid_face {
+                deinit(*result);
+                return .{};
+            }
+
             first_index := current_index;
             for *fv: face.face_vertices {
-                if fv.position_index < 0 || fv.position_index >= obj.all_positions.count continue;
                 array_add(*result.positions, obj.all_positions[fv.position_index]);
                 current_index += 1;
             }
@@ -294,104 +237,43 @@ validate_crosshair_geometry :: (itp: *Indexed_Triangle_Positions) -> bool, strin
 
 render_crosshair :: (wp: *Windowed_Program) {
     if !wp.crosshair_settings.enabled return;
-
-    source: Indexed_Triangle_Positions;
-    use_custom := wp.crosshair_settings.kind == .CUSTOM;
-    source_is_owned := !use_custom;
-
-    if use_custom {
-        if wp.crosshair_custom.loaded {
-            source = wp.crosshair_custom.geometry;
-        } else {
-            if !wp.crosshair_custom.warned_missing {
-                print("Custom crosshair selected, but no valid '%' was loaded.\n", wp.crosshair_custom.path);
-                wp.crosshair_custom.warned_missing = true;
-            }
-            source = create_crosshair_geometry(.CROSS_WITH_HOLE);
-            source_is_owned = true;
+    if !wp.crosshair_file.loaded {
+        if !wp.crosshair_file.warned_missing {
+            print("No valid crosshair OBJ is selected.\n");
+            wp.crosshair_file.warned_missing = true;
         }
-    } else {
-        source = create_crosshair_geometry(wp.crosshair_settings.kind);
+        return;
     }
 
-    if source.indices.count == 0 || source.positions.count == 0 return;
-
-    rendered := make_crosshair_render_geometry(source, wp.crosshair_settings.color, wp.crosshair_settings.size);
-    defer {
-        if source_is_owned deinit(*source);
-        deinit(*rendered);
-    }
+    monitor := crosshair_monitor_scale_or_fallback(wp.crosshair_monitor);
+    rendered := make_crosshair_render_geometry(wp.crosshair_file.geometry,
+                                                wp.crosshair_settings.color,
+                                                cast(float32) wp.window_width,
+                                                cast(float32) wp.window_height,
+                                                monitor);
+    defer deinit(*rendered);
 
     depth_test_was_enabled := glIsEnabled(GL_DEPTH_TEST);
+    cull_was_enabled := glIsEnabled(GL_CULL_FACE);
     depth_write_was_enabled: GLboolean;
     glGetBooleanv(GL_DEPTH_WRITEMASK, *depth_write_was_enabled);
 
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     set_active_program(wp.absolute_position_color_alpha_renderer);
-    set_aspect_ratio_uniform(*wp.absolute_position_color_alpha_renderer, get_window_dimensions_vector(wp));
-    immediate_render(*wp.absolute_position_color_alpha_renderer, rendered);
-    clear_active_program();
-
-    if depth_test_was_enabled {
-        glEnable(GL_DEPTH_TEST);
-    } else {
-        glDisable(GL_DEPTH_TEST);
-    }
-    glDepthMask(depth_write_was_enabled);
-}
-
-set_crosshair_preview_rect :: (wp: *Windowed_Program, rect: UI_Rect) {
-    wp.crosshair_preview.visible = true;
-    wp.crosshair_preview.rect = rect;
-}
-
-render_crosshair_preview :: (wp: *Windowed_Program) {
-    if !wp.crosshair_preview.visible return;
-    defer wp.crosshair_preview.visible = false;
-
-    source: Indexed_Triangle_Positions;
-    use_custom := wp.crosshair_settings.kind == .CUSTOM;
-    source_is_owned := !use_custom;
-
-    if use_custom && wp.crosshair_custom.loaded {
-        source = wp.crosshair_custom.geometry;
-    } else if use_custom {
-        source = create_crosshair_geometry(.CROSS_WITH_HOLE);
-        source_is_owned = true;
-    } else {
-        source = create_crosshair_geometry(wp.crosshair_settings.kind);
-    }
-
-    if source.indices.count == 0 || source.positions.count == 0 return;
-
-    rendered := make_crosshair_preview_geometry(source, wp.crosshair_settings.color, wp.crosshair_settings.size, wp.crosshair_preview.rect);
-    defer {
-        if source_is_owned deinit(*source);
-        deinit(*rendered);
-    }
-
-    depth_test_was_enabled := glIsEnabled(GL_DEPTH_TEST);
-    depth_write_was_enabled: GLboolean;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, *depth_write_was_enabled);
-
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    set_active_program(wp.absolute_position_color_alpha_renderer);
+    // OBJ positions are converted to framebuffer NDC, so no additional
+    // aspect-ratio correction belongs in the shader.
     set_aspect_ratio_uniform(*wp.absolute_position_color_alpha_renderer, .{1.0, 1.0});
     immediate_render(*wp.absolute_position_color_alpha_renderer, rendered);
     clear_active_program();
 
-    if depth_test_was_enabled {
-        glEnable(GL_DEPTH_TEST);
-    } else {
-        glDisable(GL_DEPTH_TEST);
-    }
+    if depth_test_was_enabled glEnable(GL_DEPTH_TEST);
+    else glDisable(GL_DEPTH_TEST);
     glDepthMask(depth_write_was_enabled);
+    if cull_was_enabled glEnable(GL_CULL_FACE);
+    else glDisable(GL_CULL_FACE);
 }

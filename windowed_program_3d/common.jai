@@ -27,7 +27,11 @@ begin_windowed_program_3d_example_render :: (
 }
 
 end_windowed_program_3d_example_render :: (base: *Windowed_Program_3D_Base) {
-    if base.current_menu != .NONE render_menus(*base.wp);
+    if base.current_menu == .NONE {
+        render_crosshair(*base.wp.base);
+    } else {
+        render_menus(*base.wp);
+    }
     ui_end(*base.wp);
     drain_ui_audio_events(*base.wp);
     Simp.swap_buffers(base.window, false);
