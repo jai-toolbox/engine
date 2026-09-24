@@ -31,4 +31,7 @@
 #load "../crosshair_editor.jai";
 #load "../graphs.jai";
 #load "../sound.jai";
+#load "picking.jai";
+#load "transform_editing.jai";
+#load "view_axis_gizmo.jai";
 #load "windowed_program_3d_base.jai";

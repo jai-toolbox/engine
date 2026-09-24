@@ -49,6 +49,7 @@ add_renderable :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
     geometry: $T/interface Gpu_Style_Pbr_Skeletal_Animation_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
+    editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
 ) -> *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable {
     renderable := array_add(*renderables);
     assign_geometry_copy(*renderable.shaded, geometry);
@@ -57,11 +58,47 @@ add_renderable :: (
     array_copy(*renderable.depth.bone_transform_indices, geometry.bone_transform_indices);
     array_copy(*renderable.depth.bone_weights, geometry.bone_weights);
 
-    if !buffer_object(*renderer, *renderable.shaded) return null;
-    if !buffer_object(*depth_renderer, *renderable.depth) return null;
+    if !buffer_object(*renderer, *renderable.shaded) {
+        deinit(*renderable.shaded);
+        deinit(*renderable.depth);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
+    if !buffer_object(*depth_renderer, *renderable.depth) {
+        deinit(*renderable.shaded, *renderer);
+        deinit(*renderable.depth);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
     set_local_to_world_matrix(*renderer, renderable.shaded, local_to_world);
     set_local_to_world_matrix(*depth_renderer, renderable.depth, local_to_world);
+    if add_skeletal_pickable(*picker, geometry, local_to_world, editor_permissions) == WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+        deinit(*renderable.shaded, *renderer);
+        deinit(*renderable.depth, *depth_renderer);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
     return renderable;
+}
+
+set_renderable_transform :: (
+    using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
+    object_id: u32,
+    local_to_world: Matrix4,
+) -> bool {
+    if object_id == 0 || object_id > cast(u32) renderables.count return false;
+    renderable := renderables[cast(int) object_id - 1];
+    set_local_to_world_matrix(*renderer, renderable.shaded, local_to_world);
+    set_local_to_world_matrix(*depth_renderer, renderable.depth, local_to_world);
+    return set_pickable_transform(*picker, object_id, local_to_world);
+}
+
+get_selected_renderable :: (
+    using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
+) -> *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable {
+    index := windowed_program_3d_selected_renderable_index(*base_3d);
+    if index < 0 || index >= renderables.count return null;
+    return *renderables[index];
 }
 
 set_bone_transforms :: (
@@ -71,6 +108,7 @@ set_bone_transforms :: (
     for *matrix: bone_buffer.matrices matrix.* = Matrix4_Identity;
     count := min(transforms.count, WINDOWED_PROGRAM_3D_EXAMPLE_MAX_BONES);
     for i: 0..count - 1 bone_buffer.matrices[i] = transforms[i];
+    update_skeletal_pickables(*picker, bone_buffer.matrices);
 }
 
 windowed_program_3d_world_to_light_clip :: (
@@ -86,6 +124,7 @@ windowed_program_3d_world_to_light_clip :: (
 
 per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
     per_frame_update(*base_3d);
+    apply_windowed_program_3d_editor_transform(program, *base_3d);
     world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
 
     glUseProgram(renderer.shader_program_gl_handle);
@@ -135,7 +174,9 @@ render_scene :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Ske
     glActiveTexture(GL_TEXTURE0);
     upload(*bone_buffer);
     for renderable: renderables queue_render(*renderer, renderable.shaded);
+    begin_windowed_program_3d_geometry_render(*base_3d);
     render(*renderer);
+    end_windowed_program_3d_geometry_render(*base_3d);
     end_windowed_program_3d_example_render(*base_3d);
 }
 

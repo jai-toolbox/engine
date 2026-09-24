@@ -48,6 +48,7 @@ Network :: #import "tbx/network";
 #load "windowed_program.jai";
 #load "software_windowed_program.jai";
 #load "windowed_program_2d.jai";
+#load "windowed_program_3d_base/picking.jai";
 #load "windowed_program_3d_base/windowed_program_3d_base.jai";
 #load "windowed_menu_program.jai";
 #load "crosshair_editor.jai";

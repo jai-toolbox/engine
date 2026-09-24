@@ -44,17 +44,54 @@ add_renderable :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows,
     geometry: $T/interface Gpu_Style_Pbr_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
+    editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
 ) -> *Windowed_Program_3D_PBR_Directional_Shadows_Renderable {
     renderable := array_add(*renderables);
     assign_geometry_copy(*renderable.shaded, geometry);
     array_copy(*renderable.depth.indices, geometry.indices);
     array_copy(*renderable.depth.positions, geometry.positions);
 
-    if !buffer_object(*renderer, *renderable.shaded) return null;
-    if !buffer_object(*depth_renderer, *renderable.depth) return null;
+    if !buffer_object(*renderer, *renderable.shaded) {
+        deinit(*renderable.shaded);
+        deinit(*renderable.depth);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
+    if !buffer_object(*depth_renderer, *renderable.depth) {
+        deinit(*renderable.shaded, *renderer);
+        deinit(*renderable.depth);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
     set_local_to_world_matrix(*renderer, renderable.shaded, local_to_world);
     set_local_to_world_matrix(*depth_renderer, renderable.depth, local_to_world);
+    if add_pickable(*picker, geometry, local_to_world, editor_permissions) == WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+        deinit(*renderable.shaded, *renderer);
+        deinit(*renderable.depth, *depth_renderer);
+        array_resize(*renderables, renderables.count - 1);
+        return null;
+    }
     return renderable;
+}
+
+set_renderable_transform :: (
+    using program: *Windowed_Program_3D_PBR_Directional_Shadows,
+    object_id: u32,
+    local_to_world: Matrix4,
+) -> bool {
+    if object_id == 0 || object_id > cast(u32) renderables.count return false;
+    renderable := renderables[cast(int) object_id - 1];
+    set_local_to_world_matrix(*renderer, renderable.shaded, local_to_world);
+    set_local_to_world_matrix(*depth_renderer, renderable.depth, local_to_world);
+    return set_pickable_transform(*picker, object_id, local_to_world);
+}
+
+get_selected_renderable :: (
+    using program: *Windowed_Program_3D_PBR_Directional_Shadows,
+) -> *Windowed_Program_3D_PBR_Directional_Shadows_Renderable {
+    index := windowed_program_3d_selected_renderable_index(*base_3d);
+    if index < 0 || index >= renderables.count return null;
+    return *renderables[index];
 }
 
 windowed_program_3d_world_to_light_clip :: (
@@ -70,6 +107,7 @@ windowed_program_3d_world_to_light_clip :: (
 
 per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows) {
     per_frame_update(*base_3d);
+    apply_windowed_program_3d_editor_transform(program, *base_3d);
     world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
 
     glUseProgram(renderer.shader_program_gl_handle);
@@ -117,7 +155,9 @@ render_scene :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows) {
     glBindTexture(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
     glActiveTexture(GL_TEXTURE0);
     for renderable: renderables queue_render(*renderer, renderable.shaded);
+    begin_windowed_program_3d_geometry_render(*base_3d);
     render(*renderer);
+    end_windowed_program_3d_geometry_render(*base_3d);
     end_windowed_program_3d_example_render(*base_3d);
 }
 

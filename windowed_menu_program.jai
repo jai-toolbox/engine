@@ -165,6 +165,8 @@ apply_graphics_settings :: (using wp: *Windowed_Menu_Program_Base) {
     max_fps = desired_max_fps;
     directional_shadows = desired_directional_shadows;
     render_model = desired_render_model;
+    wireframe = desired_wireframe;
+    show_grid = desired_show_grid;
     apply_fullscreen_resolution(wp);
     crosshair_monitor = measure_crosshair_monitor_scale();
 }
@@ -182,6 +184,10 @@ Windowed_Menu_Program_Base :: struct {
     directional_shadows := false;
     desired_render_model := Renderer_Mode.PBR;
     render_model := Renderer_Mode.PBR;
+    desired_wireframe := false;
+    wireframe := false;
+    desired_show_grid := true;
+    show_grid := true;
 
     volume: float32 = 50.0;
     sensitivity: float32 = 2.1;
@@ -218,6 +224,7 @@ Windowed_Menu_Program :: struct {
     menu_return_to := Current_Menu.MAIN;
     show_open_model_menu := true;
     show_scene_graphics_settings := true;
+    show_3d_graphics_settings := false;
     crosshair_editor: Engine_Crosshair_Editor;
 }
 
@@ -239,6 +246,8 @@ init_menu_defaults :: (using wp: *Windowed_Menu_Program_Base) {
     desired_max_fps = max_fps;
     desired_directional_shadows = directional_shadows;
     desired_render_model = render_model;
+    desired_wireframe = wireframe;
+    desired_show_grid = show_grid;
 }
 
 // common ui widgets, move to the ui submodule later.
@@ -460,6 +469,14 @@ render_graphics_settings :: (using wp : *Windowed_Menu_Program) {
         if ui_dropdown("Rendering Model", render_model_labels(), *render_model_selection) {
             desired_render_model = cast(Renderer_Mode) render_model_selection;
         }
+    }
+
+    if show_3d_graphics_settings {
+        ui_spacing(4);
+        ui_checkbox("Wireframe", *desired_wireframe);
+
+        ui_spacing(4);
+        ui_checkbox("Infinite Grid", *desired_show_grid);
     }
 
     ui_spacing(4);
@@ -707,6 +724,8 @@ save_settings :: (using wp: *Windowed_Menu_Program_Base) {
     set_bool(*configuration, "graphics", "vsync", desired_vsync);
     set_bool(*configuration, "graphics", "directional_shadows", desired_directional_shadows);
     set_int(*configuration, "graphics", "render_model", cast(int) desired_render_model);
+    set_bool(*configuration, "graphics", "wireframe", desired_wireframe);
+    set_bool(*configuration, "graphics", "show_grid", desired_show_grid);
     set_int(*configuration, "graphics", "max_fps", cast(int) desired_max_fps);
     set_float(*configuration, "input", "sensitivity", sensitivity);
     set_bool(*configuration, "crosshair", "enabled", crosshair_settings.enabled);
@@ -770,6 +789,12 @@ load_menu_settings :: (using wp: *Windowed_Menu_Program) {
         desired_render_model = cast(Renderer_Mode) render_model_int;
         render_model = desired_render_model;
     }
+
+    loaded_wireframe, wireframe_was_loaded := get_bool(*configuration, "graphics", "wireframe");
+    if wireframe_was_loaded desired_wireframe = loaded_wireframe;
+
+    loaded_show_grid, show_grid_was_loaded := get_bool(*configuration, "graphics", "show_grid");
+    if show_grid_was_loaded desired_show_grid = loaded_show_grid;
 
     fps, ok_fps := get_int(*configuration, "graphics", "max_fps");
     if ok_fps && fps >= 30 && fps <= 512 {

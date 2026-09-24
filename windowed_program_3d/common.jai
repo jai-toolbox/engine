@@ -1,6 +1,6 @@
-// The examples deliberately share only window presentation and the two small
-// GPU resources that are not tied to a particular material renderer. Renderer
-// ownership, uniforms, renderables, and draw calls stay visible in each file.
+// The examples share window presentation and editor overlays through the base,
+// plus the small GPU resources that are not tied to a particular material
+// renderer. Material renderer ownership and draw calls stay visible per file.
 
 #scope_file
 Simp :: #import "Simp";
@@ -24,11 +24,15 @@ begin_windowed_program_3d_example_render :: (
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
     glClear(GL_DEPTH_BUFFER_BIT);
+
+    render_object_ids(*base.picker, base.world_to_camera, base.camera_to_clip);
+    glViewport(0, 0, cast(u32) base.window_width, cast(u32) base.window_height);
 }
 
 end_windowed_program_3d_example_render :: (base: *Windowed_Program_3D_Base) {
+    render_windowed_program_3d_editor_overlays(base);
     if base.current_menu == .NONE {
-        render_crosshair(*base.wp.base);
+        if base.camera_look_active render_crosshair(*base.wp.base);
     } else {
         render_menus(*base.wp);
     }
@@ -45,6 +49,71 @@ run_windowed_program_3d_example_frame :: (
     per_frame_update(program);
     render_scene(program);
     end_frame(base);
+}
+
+apply_windowed_program_3d_editor_transform :: (
+    program: *$Program,
+    base: *Windowed_Program_3D_Base,
+) {
+    if !base.editor_transform_changed return;
+    if !set_renderable_transform(
+        program,
+        base.editor_transform_object_id,
+        base.editor_transform_matrix,
+    ) {
+        log_error(
+            "Could not apply the editor transform for object %",
+            base.editor_transform_object_id,
+        );
+    }
+    base.editor_transform_changed = false;
+}
+
+set_renderable_editor_permissions :: (
+    program: *$Program,
+    object_id: u32,
+    editor_permissions: Windowed_Program_3D_Editor_Permissions,
+) -> bool {
+    return set_windowed_program_3d_editor_permissions(
+        *program.base_3d,
+        object_id,
+        editor_permissions,
+    );
+}
+
+get_renderable_editor_permissions :: (
+    program: *$Program,
+    object_id: u32,
+) -> (permissions: Windowed_Program_3D_Editor_Permissions, found: bool) {
+    permissions, found := get_windowed_program_3d_editor_permissions(
+        *program.base_3d,
+        object_id,
+    );
+    return permissions, found;
+}
+
+set_renderable_selectable :: (
+    program: *$Program,
+    object_id: u32,
+    selectable: bool,
+) -> bool {
+    permissions, found := get_renderable_editor_permissions(program, object_id);
+    if !found return false;
+    if selectable permissions |= .SELECTABLE;
+    else            permissions &= ~.SELECTABLE;
+    return set_renderable_editor_permissions(program, object_id, permissions);
+}
+
+set_renderable_transformable :: (
+    program: *$Program,
+    object_id: u32,
+    transformable: bool,
+) -> bool {
+    permissions, found := get_renderable_editor_permissions(program, object_id);
+    if !found return false;
+    if transformable permissions |= .TRANSFORMABLE;
+    else               permissions &= ~.TRANSFORMABLE;
+    return set_renderable_editor_permissions(program, object_id, permissions);
 }
 
 begin_frame :: (base: *Windowed_Program_3D_Base) {
@@ -140,12 +209,12 @@ windowed_program_3d_example_light_clip_matrix :: (
     half_extent: float32,
     depth_extent: float32,
 ) -> Matrix4 {
-    direction = normalize(direction);
-    eye := center - direction * depth_extent * 0.5;
+    normalized_direction := normalize(direction);
+    eye := center - normalized_direction * depth_extent * 0.5;
     up_hint := Vector3.{0, 1, 0};
-    if abs(dot(up_hint, direction)) > 0.95 up_hint = .{1, 0, 0};
-    right := normalize(cross(up_hint, direction));
-    up := cross(direction, right);
+    if abs(dot(up_hint, normalized_direction)) > 0.95 up_hint = .{1, 0, 0};
+    right := normalize(cross(up_hint, normalized_direction));
+    up := cross(normalized_direction, right);
 
     world_to_light := Matrix4_Identity;
     world_to_light.coef[0][0] = right.x;
@@ -156,10 +225,10 @@ windowed_program_3d_example_light_clip_matrix :: (
     world_to_light.coef[1][1] = up.y;
     world_to_light.coef[1][2] = up.z;
     world_to_light.coef[1][3] = -dot(up, eye);
-    world_to_light.coef[2][0] = -direction.x;
-    world_to_light.coef[2][1] = -direction.y;
-    world_to_light.coef[2][2] = -direction.z;
-    world_to_light.coef[2][3] = dot(direction, eye);
+    world_to_light.coef[2][0] = -normalized_direction.x;
+    world_to_light.coef[2][1] = -normalized_direction.y;
+    world_to_light.coef[2][2] = -normalized_direction.z;
+    world_to_light.coef[2][3] = dot(normalized_direction, eye);
 
     light_to_clip := orthographic_projection_matrix(
         left = -half_extent,

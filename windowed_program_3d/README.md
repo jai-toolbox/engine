@@ -11,7 +11,7 @@ Import `tbx/engine/windowed_program_3d` and choose the smallest program that mat
 
 Use `begin_frame(*program.base_3d)` and `end_frame(*program.base_3d)` instead of
 `run` when the application needs custom per-frame work such as animation. The
-spinning-cube example in `src/main.jai` demonstrates that form.
+standard editor behavior remains in the base update in either form.
 
 The examples are deliberately separated by render path:
 
@@ -31,6 +31,72 @@ Every program includes the shared crosshair menu and geometry editor through
 geometry, and missing built-in crosshairs are generated there on first use. Open
 **User Settings** to select an OBJ or create and edit one. The selected geometry
 is also rendered over the scene by the common presentation pass.
+
+## Editing controls and selection
+
+The shared base has two 3D interaction states:
+
+- Captured camera: the mouse looks, movement controls are active, and clicks do
+  not select scene objects.
+- Free mouse: the camera is locked, the operating-system cursor is visible, and
+  left click selects the closest renderable under the cursor.
+
+Right click switches between the states. `M` is retained as a keyboard shortcut,
+and `Escape` returns from free-mouse mode to the captured camera before opening a
+menu. A selected renderable is outlined in gold. `selected_object_id` is zero
+when nothing is selected, and `selection_changed` is true for the frame in which
+the selection changes. Each focused program also provides
+`get_selected_renderable(*program)`.
+
+Renderable object IDs are one-based and remain stable for the lifetime of the
+program. Use `set_renderable_transform(*program, object_id, matrix)` when editing
+an object's transform so the visible and picking passes stay synchronized.
+The skeletal variants likewise refresh their picking meshes from each pose
+passed to `set_bone_transforms`.
+
+Every `add_renderable` overload accepts optional editor permission flags after
+the transform. The default is `.ALL` (`.SELECTABLE | .TRANSFORMABLE`):
+
+```jai
+add_renderable(*program, geometry, transform, .NONE); // Physics-owned.
+
+// Selectable for inspection, but G/R/S is disabled.
+add_renderable(*program, geometry, transform, .SELECTABLE);
+```
+
+Permissions can also change at runtime with
+`set_renderable_selectable(*program, object_id, enabled)`,
+`set_renderable_transformable(...)`, or `set_renderable_editor_permissions(...)`.
+Disabling selection clears that object if selected. Disabling transforms cancels
+an active edit and restores its original matrix. A non-selectable object still
+writes picker depth with object ID zero, so it occludes objects behind it rather
+than allowing clicks to pass through. Physics and animation code should continue
+using `set_renderable_transform` or `set_bone_transforms` to keep picking geometry
+synchronized.
+
+In free-mouse mode, select an object and press `G`, `R`, or `S` to move,
+rotate, or scale it. `X`, `Y`, and `Z` constrain the active operation to a world
+axis; pressing the active constraint again returns to free manipulation. Left
+click confirms the operation. Right click or `Escape` restores the original
+transform. These controls update the ordinary renderable, picking proxy, and
+selection outline together in every focused 3D program.
+
+All focused 3D programs also render the shared infinite grid. Perspective views
+always use the XZ floor plane. Only an orthographic, axis-aligned camera moves
+the grid to the plane perpendicular to the view direction. In free-mouse mode,
+`2`, `3`, and `4` select top/XZ, side/YZ, and front/XY orthographic views. The
+first axis preset saves the current perspective camera; `1`, or re-entering
+captured camera-look mode, restores it. Set `view_preset_focus` and
+`view_preset_distance` to frame a program's scene, or set
+`view_preset_shortcuts_enabled` to false to disable these keys.
+
+`O` independently toggles perspective/orthographic projection, and the mouse
+wheel controls the orthographic view height. A Blender-style X/Y/Z orientation
+widget in the upper-right corner rotates with the camera and displays an
+`ORTHO` badge while orthographic projection is active. Set
+`show_view_axis_gizmo` to false to hide it.
+The **Graphics Settings** menu contains persistent **Wireframe** and
+**Infinite Grid** toggles.
 
 Minimal usage:
 

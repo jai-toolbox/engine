@@ -73,6 +73,13 @@ Movement_Mode :: enum {
     FPS;
 }
 
+Windowed_Program_3D_View_Preset :: enum {
+    PERSPECTIVE;
+    TOP;
+    SIDE;
+    FRONT;
+}
+
 Orientation :: struct {
     forward: Vector3;
     right: Vector3;
@@ -93,6 +100,31 @@ Windowed_Program_3D_Base :: struct {
     camera_look_active := true;
     camera_velocity: Vector3;
     movement_mode: Movement_Mode;
+
+    picker: Windowed_Program_3D_Picker;
+    selected_object_id: u32;
+    selection_changed: bool;
+    selection_outline_color: Vector4 = .{1.0, 0.7, 0.0, 1.0};
+    selection_outline_thickness_px: u32 = 3;
+    grid: Camera_Infinite_Grid;
+    axis_alignment_threshold: float32 = 0.999;
+    orthographic_view_height: float32 = 10.0;
+    orthographic_projection_active: bool;
+    show_view_axis_gizmo := true;
+    view_preset_shortcuts_enabled := true;
+    view_preset_focus: Vector3;
+    view_preset_distance: float32 = 8.0;
+
+    axis_view_active: bool;
+    saved_perspective_camera_valid: bool;
+    saved_perspective_camera_position: Vector3;
+    saved_perspective_camera_yaw: float;
+    saved_perspective_camera_pitch: float;
+
+    transform_operation: Windowed_Program_3D_Transform_Operation;
+    editor_transform_changed: bool;
+    editor_transform_object_id: u32;
+    editor_transform_matrix: Matrix4 = Matrix4_Identity;
 
     raw_mouse_supported := false;
     raw_mouse_extension_opcode: s32;
@@ -115,7 +147,12 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
     init(*wp);
     wp.show_open_model_menu = false;
     wp.show_scene_graphics_settings = false;
+    wp.show_3d_graphics_settings = true;
     init(*section_timer);
+    init(*grid);
+    if !init(*picker, cast(u32) window_width, cast(u32) window_height) {
+        log_error("Windowed Program 3D picking is unavailable");
+    }
 
     #if OS == .LINUX {
         init_raw_mouse_input(wp3b);
@@ -138,7 +175,181 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
 }
 
 deinit :: (using wp3b: *Windowed_Program_3D_Base) {
+    deinit(*picker);
+    deinit(*grid);
     deinit(*wp);
+}
+
+windowed_program_3d_selected_renderable_index :: (using wp3b: *Windowed_Program_3D_Base) -> s64 {
+    if selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return -1;
+    return cast(s64) selected_object_id - 1;
+}
+
+set_windowed_program_3d_editor_permissions :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+    editor_permissions: Windowed_Program_3D_Editor_Permissions,
+) -> bool {
+    _, found := get_pickable_editor_permissions(*picker, object_id);
+    if !found return false;
+
+    selectable := windowed_program_3d_has_editor_permission(editor_permissions, .SELECTABLE);
+    transformable := windowed_program_3d_has_editor_permission(editor_permissions, .TRANSFORMABLE);
+    loses_active_interaction := !selectable || !transformable;
+    if loses_active_interaction && transform_operation.object_id == object_id {
+        cancel_windowed_program_3d_transform_operation(wp3b);
+    }
+
+    if !set_pickable_editor_permissions(*picker, object_id, editor_permissions) {
+        return false;
+    }
+
+    if !selectable && selected_object_id == object_id {
+        selected_object_id = WINDOWED_PROGRAM_3D_NO_OBJECT_ID;
+        selection_changed = true;
+    }
+    return true;
+}
+
+get_windowed_program_3d_editor_permissions :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+) -> (permissions: Windowed_Program_3D_Editor_Permissions, found: bool) {
+    permissions, found := get_pickable_editor_permissions(*picker, object_id);
+    return permissions, found;
+}
+
+windowed_program_3d_dominant_axis :: (
+    using wp3b: *Windowed_Program_3D_Base,
+) -> (plane: Grid_Plane, alignment: float32) {
+    forward := normalize(get_forward(*camera));
+    absolute_forward := Vector3.{abs(forward.x), abs(forward.y), abs(forward.z)};
+
+    if absolute_forward.x >= absolute_forward.y && absolute_forward.x >= absolute_forward.z {
+        return .YZ, absolute_forward.x;
+    }
+    if absolute_forward.y >= absolute_forward.z return .XZ, absolute_forward.y;
+    return .XY, absolute_forward.z;
+}
+
+set_windowed_program_3d_orthographic :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    enabled: bool,
+) {
+    orthographic_projection_active = enabled && camera_mode != .TWO_DIMENSIONS;
+    if orthographic_projection_active camera_velocity = .{};
+    else {
+        axis_view_active = false;
+        saved_perspective_camera_valid = false;
+    }
+}
+
+set_windowed_program_3d_view_preset :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    preset: Windowed_Program_3D_View_Preset,
+) {
+    if camera_mode == .TWO_DIMENSIONS return;
+
+    if preset == .PERSPECTIVE {
+        restore_saved_camera := axis_view_active && saved_perspective_camera_valid;
+        restored_position := saved_perspective_camera_position;
+        restored_yaw := saved_perspective_camera_yaw;
+        restored_pitch := saved_perspective_camera_pitch;
+
+        set_windowed_program_3d_orthographic(wp3b, false);
+        if restore_saved_camera {
+            camera.position = restored_position;
+            camera.yaw = restored_yaw;
+            camera.pitch = restored_pitch;
+        }
+        camera_velocity = .{};
+        return;
+    }
+
+    if !axis_view_active {
+        saved_perspective_camera_valid = true;
+        saved_perspective_camera_position = camera.position;
+        saved_perspective_camera_yaw = camera.yaw;
+        saved_perspective_camera_pitch = camera.pitch;
+    }
+
+    axis_view_active = true;
+    distance := max(view_preset_distance, 0.001);
+    if preset == {
+        case .TOP;
+            camera.position = view_preset_focus + Vector3.{0, distance, 0};
+            camera.yaw = 0;
+            camera.pitch = 0.249;
+        case .SIDE;
+            camera.position = view_preset_focus + Vector3.{distance, 0, 0};
+            camera.yaw = -0.25;
+            camera.pitch = 0;
+        case .FRONT;
+            camera.position = view_preset_focus + Vector3.{0, 0, distance};
+            camera.yaw = 0;
+            camera.pitch = 0;
+    }
+    camera_velocity = .{};
+    set_windowed_program_3d_orthographic(wp3b, true);
+}
+
+set_windowed_program_3d_camera_look_active :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    enabled: bool,
+) {
+    if camera_look_active == enabled return;
+
+    camera_look_active = enabled;
+    camera_velocity = .{};
+    if enabled set_windowed_program_3d_view_preset(wp3b, .PERSPECTIVE);
+}
+
+windowed_program_3d_grid_plane :: (using wp3b: *Windowed_Program_3D_Base) -> Grid_Plane {
+    if !orthographic_projection_active return .XZ;
+
+    plane, alignment := windowed_program_3d_dominant_axis(wp3b);
+    if alignment >= axis_alignment_threshold return plane;
+    return .XZ;
+}
+
+render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_Base) {
+    if current_menu != .NONE || camera_mode == .TWO_DIMENSIONS return;
+
+    if show_grid {
+        glDepthMask(GL_FALSE);
+        render(
+            *grid,
+            camera_to_clip,
+            world_to_camera,
+            camera.position,
+            windowed_program_3d_grid_plane(wp3b),
+        );
+        glDepthMask(GL_TRUE);
+    }
+
+    draw_selection_outline(
+        *picker,
+        selected_object_id,
+        selection_outline_color,
+        selection_outline_thickness_px,
+    );
+
+    if show_view_axis_gizmo {
+        render_windowed_program_3d_view_axis_gizmo(
+            world_to_camera,
+            orthographic_projection_active,
+        );
+    }
+
+    render_windowed_program_3d_transform_operation_status(wp3b);
+}
+
+begin_windowed_program_3d_geometry_render :: (using wp3b: *Windowed_Program_3D_Base) {
+    if wireframe enable_wireframe_mode();
+}
+
+end_windowed_program_3d_geometry_render :: (using wp3b: *Windowed_Program_3D_Base) {
+    if wireframe disable_wireframe_mode();
 }
 
 #if OS == .LINUX {
@@ -218,6 +429,8 @@ deinit :: (using wp3b: *Windowed_Program_3D_Base) {
 }
 
 per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
+    selection_changed = false;
+    editor_transform_changed = false;
     linux_motion_dx := 0;
     linux_motion_dy := 0;
     linux_nonzero_motion_events := 0;
@@ -249,20 +462,53 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     for Input.events_this_frame {
         if it.type == .KEYBOARD && it.key_pressed {
             if it.key_code == .ESCAPE {
-                if current_menu == .CROSSHAIR_EDITOR {
+                if transform_operation.type != .NONE {
+                    cancel_windowed_program_3d_transform_operation(wp3b);
+                } else if current_menu == .CROSSHAIR_EDITOR {
                     current_menu = .USER_SETTINGS;
                 } else if !camera_look_active {
                     // if mouse mode is active, pressing ESC should re-lock the camera first
-                    camera_look_active = true;
+                    set_windowed_program_3d_camera_look_active(wp3b, true);
                 } else {
                     toggle_menu(*wp);
                 }
             }
 
-            if it.key_code == xx #char "M" && current_menu == .NONE {
-                camera_look_active = !camera_look_active;
+            if it.key_code == xx #char "M" && current_menu == .NONE &&
+               transform_operation.type == .NONE {
+                set_windowed_program_3d_camera_look_active(wp3b, !camera_look_active);
             }
 
+            if it.key_code == xx #char "O" && current_menu == .NONE &&
+               transform_operation.type == .NONE {
+                set_windowed_program_3d_orthographic(
+                    wp3b,
+                    !orthographic_projection_active,
+                );
+            }
+
+            if view_preset_shortcuts_enabled && !camera_look_active &&
+               camera_mode != .TWO_DIMENSIONS && current_menu == .NONE &&
+               transform_operation.type == .NONE {
+                if it.key_code == xx #char "1" {
+                    set_windowed_program_3d_view_preset(wp3b, .PERSPECTIVE);
+                } else if it.key_code == xx #char "2" {
+                    set_windowed_program_3d_view_preset(wp3b, .TOP);
+                } else if it.key_code == xx #char "3" {
+                    set_windowed_program_3d_view_preset(wp3b, .SIDE);
+                } else if it.key_code == xx #char "4" {
+                    set_windowed_program_3d_view_preset(wp3b, .FRONT);
+                }
+            }
+
+        }
+    }
+
+    if right_mouse_just_pressed() && current_menu == .NONE {
+        if transform_operation.type != .NONE {
+            cancel_windowed_program_3d_transform_operation(wp3b);
+        } else {
+            set_windowed_program_3d_camera_look_active(wp3b, !camera_look_active);
         }
     }
 
@@ -324,9 +570,21 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         }
     }
 
-    if movement_mode != .MANUAL camera.position += camera_velocity * delta_time;
+    if movement_mode != .MANUAL && want_cursor_captured camera.position += camera_velocity * delta_time;
 
     update_listener_orientation(camera.position, camera.yaw);
+
+    if orthographic_projection_active && current_menu == .NONE {
+        for Input.events_this_frame {
+            if it.type != .MOUSE_WHEEL continue;
+            if it.wheel_delta > 0 {
+                orthographic_view_height *= 0.9;
+            } else if it.wheel_delta < 0 {
+                orthographic_view_height *= 1.1;
+            }
+            orthographic_view_height = clamp(orthographic_view_height, 0.1, 10000.0);
+        }
+    }
 
     // handle 2d drag and scroll
     if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {
@@ -373,7 +631,22 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     camera_to_clip = Matrix4_Identity;
     if camera_mode != .TWO_DIMENSIONS {
         world_to_camera = get_world_to_camera_matrix(*camera);
-        camera_to_clip = get_projection_matrix(*camera, window_width, window_height);
+        if orthographic_projection_active {
+            aspect := cast(float) vw / cast(float) vh;
+            half_h := orthographic_view_height * 0.5;
+            half_w := half_h * aspect;
+            camera_to_clip = orthographic_projection_matrix(
+                left = -half_w,
+                right = half_w,
+                bottom = -half_h,
+                top = half_h,
+                near = -1000.0,
+                far = 1000.0,
+                depth_range_01 = false,
+            );
+        } else {
+            camera_to_clip = get_projection_matrix(*camera, window_width, window_height);
+        }
     } else {
         aspect := cast(float) vw / cast(float) vh;
         ortho_width := ortho_height * aspect;
@@ -389,6 +662,61 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
             far    =  100.0,
             depth_range_01 = false
         );
+    }
+
+
+    picker_width := cast(u32) max(vw, 1);
+    picker_height := cast(u32) max(vh, 1);
+    if picker.width != picker_width || picker.height != picker_height {
+        resize(*picker, picker_width, picker_height);
+    }
+
+    if !camera_look_active && camera_mode != .TWO_DIMENSIONS &&
+       current_menu == .NONE && transform_operation.type == .NONE &&
+       left_mouse_just_pressed() {
+        mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
+        if mouse_position_available {
+            new_selection := pick_closest(*picker, cast(s32) mouse_x, cast(s32) mouse_y);
+            selection_changed = new_selection != selected_object_id;
+            selected_object_id = new_selection;
+        }
+    }
+
+    if !camera_look_active && camera_mode != .TWO_DIMENSIONS && current_menu == .NONE {
+        mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
+        if mouse_position_available {
+            mouse := Vector2.{cast(float) mouse_x, cast(float) mouse_y};
+
+            if transform_operation.type == .NONE && selected_object_id != WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+                if key_just_pressed(xx #char "G") {
+                    begin_windowed_program_3d_transform_operation(wp3b, .MOVE, mouse);
+                } else if key_just_pressed(xx #char "R") {
+                    begin_windowed_program_3d_transform_operation(wp3b, .ROTATE, mouse);
+                } else if key_just_pressed(xx #char "S") {
+                    begin_windowed_program_3d_transform_operation(wp3b, .SCALE, mouse);
+                }
+            }
+
+            if transform_operation.type != .NONE {
+                if key_just_pressed(xx #char "X") {
+                    transform_operation.axis_constraint = ifx transform_operation.axis_constraint == 0
+                        then cast(s32) -1 else cast(s32) 0;
+                }
+                if key_just_pressed(xx #char "Y") {
+                    transform_operation.axis_constraint = ifx transform_operation.axis_constraint == 1
+                        then cast(s32) -1 else cast(s32) 1;
+                }
+                if key_just_pressed(xx #char "Z") {
+                    transform_operation.axis_constraint = ifx transform_operation.axis_constraint == 2
+                        then cast(s32) -1 else cast(s32) 2;
+                }
+
+                update_windowed_program_3d_transform_operation(wp3b, mouse, vw, vh);
+                if left_mouse_just_pressed() {
+                    confirm_windowed_program_3d_transform_operation(wp3b);
+                }
+            }
+        }
     }
 
 }
