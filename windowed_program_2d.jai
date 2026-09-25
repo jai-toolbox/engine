@@ -87,7 +87,8 @@ per_frame_update :: (using wp2 : *Windowed_Program_2D) {
     for Input.events_this_frame {
         if it.type == .KEYBOARD && it.key_pressed {
             if it.key_code == .ESCAPE {
-                toggle_menu(wp2);
+                if current_menu == .CROSSHAIR_EDITOR current_menu = .USER_SETTINGS;
+                else toggle_menu(wp2);
             }
         }
     }

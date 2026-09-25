@@ -17,14 +17,21 @@
 #import "tbx/assets";
 #import "tbx/model_loading";
 #import "tbx/software_rasterizer";
+#import "tbx/engine/monitor";
 
 #load "../../movement/god_mode.jai";
 #load "../build_type.jai";
 #load "../input.jai";
 #load "../looping_program.jai";
+#load "../crosshair_editor_model.jai";
+#load "../crosshair_library.jai";
 #load "../crosshair.jai";
 #load "../windowed_program.jai";
 #load "../windowed_menu_program.jai";
+#load "../crosshair_editor.jai";
 #load "../graphs.jai";
 #load "../sound.jai";
+#load "picking.jai";
+#load "transform_editing.jai";
+#load "view_axis_gizmo.jai";
 #load "windowed_program_3d_base.jai";

@@ -40,8 +40,8 @@ Windowed_Program :: struct {
     configuration: Configuration;
 
     crosshair_settings: Crosshair_Settings;
-    crosshair_custom: Crosshair_Custom_State;
-    crosshair_preview: Crosshair_Preview_State;
+    crosshair_file: Crosshair_File_State;
+    crosshair_monitor: Crosshair_Monitor_Scale;
 
     // custom UI system replaces GetRect
     ui_context: UI_Context;
@@ -77,8 +77,10 @@ init :: (using wp: *Windowed_Program) {
 
     // The widget/layout core produces draw data. This program selects the
     // OpenGL renderer backend to consume it.
-    ui_font = load_msdf_font_metrics("data/fonts/pt_serif/atlas.json");
-    if !init(*ui_renderer, *ui_font, "data/fonts/pt_serif/atlas.png") return;
+    font_directory := ifx file_exists("data/fonts/pt_serif/atlas.json") then
+                      "data/fonts/pt_serif" else "data/fonts/pt_sans";
+    ui_font = load_msdf_font_metrics(tprint("%/atlas.json", font_directory));
+    if !init(*ui_renderer, *ui_font, tprint("%/atlas.png", font_directory)) return;
     ui_init(*ui_context, *ui_font);
     attach_opengl_render_target_backend_to_ui_context(*ui_renderer);
     ui_initialized = true;
@@ -107,7 +109,8 @@ init :: (using wp: *Windowed_Program) {
 
     configuration.config_path = "data/cfg.ini";
     init(*configuration);
-    crosshair_custom.path = crosshair_path_next_to_config(configuration.config_path);
+    refresh_crosshair_library(*crosshair_file, configuration.config_path);
+    crosshair_monitor = measure_crosshair_monitor_scale();
 }
 
 deinit :: (using wp: *Windowed_Program) {
@@ -122,7 +125,9 @@ deinit :: (using wp: *Windowed_Program) {
     deinit(*sound_catalog);
 
     deinit(*configuration);
-    deinit(*crosshair_custom.geometry);
+    deinit(*crosshair_file.geometry);
+    free_crosshair_library(*crosshair_file.library);
+    if crosshair_file.path.count > 0 free(crosshair_file.path);
 
     if ui_initialized {
         ui_destroy(*ui_context);
