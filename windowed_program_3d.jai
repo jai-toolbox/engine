@@ -1299,7 +1299,7 @@ load_windowed_program_3d_pbr_skeletal_scene_from_gltf :: (gltf: *Gltf_Data) -> W
 
     gltf_scene := get_default_scene(gltf);
     if gltf_scene != null {
-        for node_index: gltf_scene.nodes load_windowed_program_3d_pbr_skeletal_node_recursive(*scene, gltf, skin_index, node_index, Matrix4_Identity);
+        for node_index: gltf_scene.root_nodes load_windowed_program_3d_pbr_skeletal_node_recursive(*scene, gltf, skin_index, node_index, Matrix4_Identity);
     } else {
         for node_index: 0..gltf.all_nodes.count - 1 load_windowed_program_3d_pbr_skeletal_node_recursive(*scene, gltf, skin_index, node_index, Matrix4_Identity);
     }
