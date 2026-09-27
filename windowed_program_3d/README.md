@@ -39,20 +39,31 @@ The shared base has two 3D interaction states:
 - Captured camera: the mouse looks, movement controls are active, and clicks do
   not select scene objects.
 - Free mouse: the camera is locked, the operating-system cursor is visible, and
-  left click selects the closest renderable under the cursor.
+  left click selects the closest renderable under the cursor. Repeated clicks
+  at the same cursor position cycle through intersecting objects from front to
+  back, then wrap to the front. Shift-click adds the clicked object to the
+  current selection. Shift-drag draws a marquee and adds every selectable mesh
+  whose projected triangles overlap the rectangle, including occluded meshes.
 
 Right click switches between the states. `M` is retained as a keyboard shortcut,
 and `Escape` returns from free-mouse mode to the captured camera before opening a
-menu. A selected renderable is outlined in gold. `selected_object_id` is zero
-when nothing is selected, and `selection_changed` is true for the frame in which
-the selection changes. Each focused program also provides
-`get_selected_renderable(*program)`.
+menu. A selected renderable is outlined in gold. Visible outline segments are
+solid; segments hidden by other geometry remain visible with reduced alpha, so
+the foreground color shows through. Tune this with
+`selection_outline_occluded_alpha`. `selected_object_ids` contains the complete
+selection, while `selected_object_id` is the active (most recently selected)
+member and remains zero when nothing is selected. `selection_changed` is true
+for the frame in which either the set or active member changes. Each focused
+program also provides `get_selected_renderable(*program)` for that active member.
 
 Renderable object IDs are one-based and remain stable for the lifetime of the
 program. Use `set_renderable_transform(*program, object_id, matrix)` when editing
-an object's transform so the visible and picking passes stay synchronized.
-The skeletal variants likewise refresh their picking meshes from each pose
-passed to `set_bone_transforms`.
+an object's transform so the visible renderable, CPU picking mesh, and selection
+outline stay synchronized. Selection raycasts the CPU triangle meshes, gathers
+all intersections, sorts them by distance, and uses that ordered list for click
+cycling; there is no GPU object-ID pass or pixel readback. The skeletal variants
+likewise refresh their CPU picking meshes from each pose passed to
+`set_bone_transforms`.
 
 Every `add_renderable` overload accepts optional editor permission flags after
 the transform. The default is `.ALL` (`.SELECTABLE | .TRANSFORMABLE`):
@@ -68,17 +79,20 @@ Permissions can also change at runtime with
 `set_renderable_selectable(*program, object_id, enabled)`,
 `set_renderable_transformable(...)`, or `set_renderable_editor_permissions(...)`.
 Disabling selection clears that object if selected. Disabling transforms cancels
-an active edit and restores its original matrix. A non-selectable object still
-writes picker depth with object ID zero, so it occludes objects behind it rather
-than allowing clicks to pass through. Physics and animation code should continue
-using `set_renderable_transform` or `set_bone_transforms` to keep picking geometry
+an active edit and restores its original matrix. A non-selectable object's CPU
+hit still blocks selectable hits behind it rather than allowing clicks to pass
+through. Physics and animation code should continue using
+`set_renderable_transform` or `set_bone_transforms` to keep picking geometry
 synchronized.
 
-In free-mouse mode, select an object and press `G`, `R`, or `S` to move,
-rotate, or scale it. `X`, `Y`, and `Z` constrain the active operation to a world
-axis; pressing the active constraint again returns to free manipulation. Left
-click confirms the operation. Right click or `Escape` restores the original
-transform. These controls update the ordinary renderable, picking proxy, and
+In free-mouse mode, select one or more objects and press `G`, `R`, or `S` to
+move, rotate, or scale them. Group rotation and scaling use the median of the
+selected transform origins as their shared pivot. `X`, `Y`, and `Z` constrain
+the active operation to a world axis; pressing the active constraint again
+returns to free manipulation. Left click confirms the operation. Right click or
+`Escape` restores every original transform. Selected objects without the
+`.TRANSFORMABLE` permission remain selected but do not join the operation.
+These controls update the ordinary renderables, CPU picking meshes, and
 selection outline together in every focused 3D program.
 
 All focused 3D programs also render the shared infinite grid. Perspective views

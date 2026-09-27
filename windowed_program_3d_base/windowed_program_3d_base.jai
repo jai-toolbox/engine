@@ -102,10 +102,28 @@ Windowed_Program_3D_Base :: struct {
     movement_mode: Movement_Mode;
 
     picker: Windowed_Program_3D_Picker;
+    selected_object_ids: [..] u32;
+    // The active object is the most recently selected member of
+    // selected_object_ids. Keep this scalar for existing callers that need one
+    // primary renderable.
     selected_object_id: u32;
     selection_changed: bool;
     selection_outline_color: Vector4 = .{1.0, 0.7, 0.0, 1.0};
     selection_outline_thickness_px: u32 = 3;
+    selection_outline_occluded_alpha: float32 = 0.32;
+    // Three representable steps of a 24-bit depth buffer, matching Blender's
+    // outline occlusion tolerance.
+    selection_outline_depth_epsilon: float32 = 3.0 / 8388608.0;
+    selection_cycle_last_mouse: Vector2;
+    selection_cycle_mouse_threshold_px: float32 = 3.0;
+    selection_cycle_valid: bool;
+    selection_drag_active: bool;
+    selection_rectangle_active: bool;
+    selection_drag_start_mouse: Vector2;
+    selection_drag_current_mouse: Vector2;
+    selection_drag_threshold_px: float32 = 4.0;
+    selection_rectangle_fill_color: Vector4 = .{0.20, 0.52, 1.0, 0.12};
+    selection_rectangle_border_color: Vector4 = .{0.38, 0.68, 1.0, 0.95};
     grid: Camera_Infinite_Grid;
     axis_alignment_threshold: float32 = 0.999;
     orthographic_view_height: float32 = 10.0;
@@ -125,6 +143,7 @@ Windowed_Program_3D_Base :: struct {
     editor_transform_changed: bool;
     editor_transform_object_id: u32;
     editor_transform_matrix: Matrix4 = Matrix4_Identity;
+    editor_transform_updates: [..] Windowed_Program_3D_Editor_Transform_Update;
 
     raw_mouse_supported := false;
     raw_mouse_extension_opcode: s32;
@@ -151,7 +170,7 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
     init(*section_timer);
     init(*grid);
     if !init(*picker, cast(u32) window_width, cast(u32) window_height) {
-        log_error("Windowed Program 3D picking is unavailable");
+        log_error("Windowed Program 3D selection outline is unavailable");
     }
 
     #if OS == .LINUX {
@@ -175,6 +194,9 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
 }
 
 deinit :: (using wp3b: *Windowed_Program_3D_Base) {
+    array_free(transform_operation.targets);
+    array_free(editor_transform_updates);
+    array_free(selected_object_ids);
     deinit(*picker);
     deinit(*grid);
     deinit(*wp);
@@ -183,6 +205,72 @@ deinit :: (using wp3b: *Windowed_Program_3D_Base) {
 windowed_program_3d_selected_renderable_index :: (using wp3b: *Windowed_Program_3D_Base) -> s64 {
     if selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return -1;
     return cast(s64) selected_object_id - 1;
+}
+
+windowed_program_3d_selection_contains :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+) -> bool {
+    if object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return false;
+    for selected_id: selected_object_ids {
+        if selected_id == object_id return true;
+    }
+    return false;
+}
+
+clear_windowed_program_3d_selection :: (using wp3b: *Windowed_Program_3D_Base) {
+    if selected_object_ids.count == 0 &&
+       selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return;
+
+    array_resize(*selected_object_ids, 0);
+    selected_object_id = WINDOWED_PROGRAM_3D_NO_OBJECT_ID;
+    selection_changed = true;
+}
+
+replace_windowed_program_3d_selection :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+) {
+    if object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+        clear_windowed_program_3d_selection(wp3b);
+        return;
+    }
+    if selected_object_ids.count == 1 && selected_object_ids[0] == object_id &&
+       selected_object_id == object_id return;
+
+    array_resize(*selected_object_ids, 0);
+    array_add(*selected_object_ids, object_id);
+    selected_object_id = object_id;
+    selection_changed = true;
+}
+
+add_to_windowed_program_3d_selection :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+) {
+    if object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return;
+    already_selected := windowed_program_3d_selection_contains(wp3b, object_id);
+    active_changed := selected_object_id != object_id;
+    if !already_selected array_add(*selected_object_ids, object_id);
+    selected_object_id = object_id;
+    if !already_selected || active_changed selection_changed = true;
+}
+
+remove_from_windowed_program_3d_selection :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    object_id: u32,
+) {
+    for selected_id, selected_index: selected_object_ids {
+        if selected_id != object_id continue;
+        array_ordered_remove_by_index(*selected_object_ids, selected_index);
+        if selected_object_id == object_id {
+            selected_object_id = ifx selected_object_ids.count > 0
+                then selected_object_ids[selected_object_ids.count - 1]
+                else WINDOWED_PROGRAM_3D_NO_OBJECT_ID;
+        }
+        selection_changed = true;
+        return;
+    }
 }
 
 set_windowed_program_3d_editor_permissions :: (
@@ -196,7 +284,8 @@ set_windowed_program_3d_editor_permissions :: (
     selectable := windowed_program_3d_has_editor_permission(editor_permissions, .SELECTABLE);
     transformable := windowed_program_3d_has_editor_permission(editor_permissions, .TRANSFORMABLE);
     loses_active_interaction := !selectable || !transformable;
-    if loses_active_interaction && transform_operation.object_id == object_id {
+    if loses_active_interaction &&
+       windowed_program_3d_transform_operation_contains(*transform_operation, object_id) {
         cancel_windowed_program_3d_transform_operation(wp3b);
     }
 
@@ -204,9 +293,9 @@ set_windowed_program_3d_editor_permissions :: (
         return false;
     }
 
-    if !selectable && selected_object_id == object_id {
-        selected_object_id = WINDOWED_PROGRAM_3D_NO_OBJECT_ID;
-        selection_changed = true;
+    if !selectable && windowed_program_3d_selection_contains(wp3b, object_id) {
+        remove_from_windowed_program_3d_selection(wp3b, object_id);
+        selection_cycle_valid = false;
     }
     return true;
 }
@@ -249,6 +338,7 @@ set_windowed_program_3d_view_preset :: (
     preset: Windowed_Program_3D_View_Preset,
 ) {
     if camera_mode == .TWO_DIMENSIONS return;
+    selection_cycle_valid = false;
 
     if preset == .PERSPECTIVE {
         restore_saved_camera := axis_view_active && saved_perspective_camera_valid;
@@ -301,6 +391,9 @@ set_windowed_program_3d_camera_look_active :: (
 
     camera_look_active = enabled;
     camera_velocity = .{};
+    selection_cycle_valid = false;
+    selection_drag_active = false;
+    selection_rectangle_active = false;
     if enabled set_windowed_program_3d_view_preset(wp3b, .PERSPECTIVE);
 }
 
@@ -312,8 +405,112 @@ windowed_program_3d_grid_plane :: (using wp3b: *Windowed_Program_3D_Base) -> Gri
     return .XZ;
 }
 
+windowed_program_3d_select_at_mouse :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    mouse: Vector2,
+    viewport_width: s32,
+    viewport_height: s32,
+    additive: bool,
+) {
+    ray_origin, ray_direction, ray_ok := windowed_program_3d_ray_from_screen(
+        mouse,
+        viewport_width,
+        viewport_height,
+        world_to_camera,
+        camera_to_clip,
+    );
+
+    hits: [..] Windowed_Program_3D_Pick_Hit;
+    defer array_free(hits);
+    if ray_ok pick_all(*picker, ray_origin, ray_direction, *hits);
+
+    click_delta := mouse - selection_cycle_last_mouse;
+    same_click_position := selection_cycle_valid
+        && length_squared(click_delta)
+            <= selection_cycle_mouse_threshold_px * selection_cycle_mouse_threshold_px;
+
+    picked_object_id: u32 = WINDOWED_PROGRAM_3D_NO_OBJECT_ID;
+    if hits.count > 0 {
+        picked_object_id = hits[0].object_id;
+        if same_click_position && selected_object_id != WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+            for hit, hit_index: hits {
+                if hit.object_id != selected_object_id continue;
+                next_index := (hit_index + 1) % hits.count;
+                picked_object_id = hits[next_index].object_id;
+                break;
+            }
+        }
+    }
+
+    if additive {
+        add_to_windowed_program_3d_selection(wp3b, picked_object_id);
+    } else {
+        replace_windowed_program_3d_selection(wp3b, picked_object_id);
+    }
+    selection_cycle_last_mouse = mouse;
+    selection_cycle_valid = true;
+}
+
+windowed_program_3d_add_rectangle_selection :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    viewport_width: s32,
+    viewport_height: s32,
+) {
+    rectangle_object_ids: [..] u32;
+    defer array_free(rectangle_object_ids);
+    pick_in_screen_rectangle(
+        *picker,
+        selection_drag_start_mouse,
+        selection_drag_current_mouse,
+        viewport_width,
+        viewport_height,
+        world_to_camera,
+        camera_to_clip,
+        *rectangle_object_ids,
+    );
+    for object_id: rectangle_object_ids {
+        if windowed_program_3d_selection_contains(wp3b, object_id) continue;
+        array_add(*selected_object_ids, object_id);
+        selection_changed = true;
+    }
+    // Keep an existing active object stable; rectangle traversal order is an
+    // implementation detail and should not unexpectedly replace it.
+    if selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID &&
+       selected_object_ids.count > 0 {
+        selected_object_id = selected_object_ids[selected_object_ids.count - 1];
+        selection_changed = true;
+    }
+    selection_cycle_valid = false;
+}
+
+render_windowed_program_3d_selection_rectangle :: (
+    using wp3b: *Windowed_Program_3D_Base,
+) {
+    if !selection_rectangle_active || ui_ctx == null return;
+
+    minimum_x := min(selection_drag_start_mouse.x, selection_drag_current_mouse.x);
+    maximum_x := max(selection_drag_start_mouse.x, selection_drag_current_mouse.x);
+    minimum_y := min(selection_drag_start_mouse.y, selection_drag_current_mouse.y);
+    maximum_y := max(selection_drag_start_mouse.y, selection_drag_current_mouse.y);
+    rectangle := UI_Rect.{
+        minimum_x,
+        ui_ctx.window_h - maximum_y,
+        maximum_x - minimum_x,
+        maximum_y - minimum_y,
+    };
+    ui_cmd_rect(rectangle, selection_rectangle_fill_color);
+    ui_cmd_rect_outline(rectangle, selection_rectangle_border_color);
+}
+
 render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_Base) {
     if current_menu != .NONE || camera_mode == .TWO_DIMENSIONS return;
+
+    selection_outline_ready := prepare_selection_outline(
+        *picker,
+        selected_object_ids,
+        world_to_camera,
+        camera_to_clip,
+    );
 
     if show_grid {
         glDepthMask(GL_FALSE);
@@ -327,12 +524,16 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
         glDepthMask(GL_TRUE);
     }
 
-    draw_selection_outline(
-        *picker,
-        selected_object_id,
-        selection_outline_color,
-        selection_outline_thickness_px,
-    );
+    if selection_outline_ready {
+        draw_selection_outline(
+            *picker,
+            selected_object_ids.count > 0,
+            selection_outline_color,
+            selection_outline_thickness_px,
+            selection_outline_occluded_alpha,
+            selection_outline_depth_epsilon,
+        );
+    }
 
     if show_view_axis_gizmo {
         render_windowed_program_3d_view_axis_gizmo(
@@ -341,6 +542,7 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
         );
     }
 
+    render_windowed_program_3d_selection_rectangle(wp3b);
     render_windowed_program_3d_transform_operation_status(wp3b);
 }
 
@@ -431,6 +633,7 @@ end_windowed_program_3d_geometry_render :: (using wp3b: *Windowed_Program_3D_Bas
 per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     selection_changed = false;
     editor_transform_changed = false;
+    array_resize(*editor_transform_updates, 0);
     linux_motion_dx := 0;
     linux_motion_dy := 0;
     linux_nonzero_motion_events := 0;
@@ -671,15 +874,51 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         resize(*picker, picker_width, picker_height);
     }
 
-    if !camera_look_active && camera_mode != .TWO_DIMENSIONS &&
-       current_menu == .NONE && transform_operation.type == .NONE &&
-       left_mouse_just_pressed() {
+    selection_context_active := !camera_look_active
+        && camera_mode != .TWO_DIMENSIONS
+        && current_menu == .NONE
+        && transform_operation.type == .NONE;
+    if selection_context_active {
         mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
         if mouse_position_available {
-            new_selection := pick_closest(*picker, cast(s32) mouse_x, cast(s32) mouse_y);
-            selection_changed = new_selection != selected_object_id;
-            selected_object_id = new_selection;
+            mouse := Vector2.{cast(float32) mouse_x, cast(float32) mouse_y};
+            shift_down := key_pressed(Input.Key_Code.SHIFT);
+            left_down := left_mouse_pressed();
+
+            if left_mouse_just_pressed() {
+                if shift_down {
+                    selection_drag_active = true;
+                    selection_rectangle_active = false;
+                    selection_drag_start_mouse = mouse;
+                    selection_drag_current_mouse = mouse;
+                } else {
+                    windowed_program_3d_select_at_mouse(wp3b, mouse, vw, vh, false);
+                }
+            }
+
+            if selection_drag_active {
+                selection_drag_current_mouse = mouse;
+                drag_delta := selection_drag_current_mouse - selection_drag_start_mouse;
+                if left_down {
+                    selection_rectangle_active = length_squared(drag_delta)
+                        >= selection_drag_threshold_px * selection_drag_threshold_px;
+                } else {
+                    if selection_rectangle_active {
+                        windowed_program_3d_add_rectangle_selection(wp3b, vw, vh);
+                    } else {
+                        windowed_program_3d_select_at_mouse(wp3b, mouse, vw, vh, true);
+                    }
+                    selection_drag_active = false;
+                    selection_rectangle_active = false;
+                }
+            }
+        } else if selection_drag_active && !left_mouse_pressed() {
+            selection_drag_active = false;
+            selection_rectangle_active = false;
         }
+    } else {
+        selection_drag_active = false;
+        selection_rectangle_active = false;
     }
 
     if !camera_look_active && camera_mode != .TWO_DIMENSIONS && current_menu == .NONE {

@@ -5,14 +5,43 @@ Windowed_Program_3D_Transform_Operation_Type :: enum {
     SCALE;
 }
 
+Windowed_Program_3D_Transform_Target :: struct {
+    object_id: u32;
+    original_transform: Matrix4 = Matrix4_Identity;
+    preview_transform: Matrix4 = Matrix4_Identity;
+}
+
 Windowed_Program_3D_Transform_Operation :: struct {
     type: Windowed_Program_3D_Transform_Operation_Type;
-    object_id: u32;
+    targets: [..] Windowed_Program_3D_Transform_Target;
     axis_constraint: s32 = -1; // -1 = free, 0 = X, 1 = Y, 2 = Z
     start_mouse: Vector2;
     pivot: Vector3;
-    original_transform: Matrix4 = Matrix4_Identity;
-    preview_transform: Matrix4 = Matrix4_Identity;
+}
+
+Windowed_Program_3D_Editor_Transform_Update :: struct {
+    object_id: u32;
+    transform: Matrix4 = Matrix4_Identity;
+}
+
+windowed_program_3d_clear_transform_operation :: (
+    operation: *Windowed_Program_3D_Transform_Operation,
+) {
+    operation.type = .NONE;
+    operation.axis_constraint = -1;
+    operation.start_mouse = .{};
+    operation.pivot = .{};
+    array_resize(*operation.targets, 0);
+}
+
+windowed_program_3d_transform_operation_contains :: (
+    operation: *Windowed_Program_3D_Transform_Operation,
+    object_id: u32,
+) -> bool {
+    for target: operation.targets {
+        if target.object_id == object_id return true;
+    }
+    return false;
 }
 
 windowed_program_3d_transform_pivot :: (transform: Matrix4) -> Vector3 {
@@ -76,6 +105,20 @@ windowed_program_3d_publish_editor_transform :: (
     transform: Matrix4,
 ) {
     if !set_pickable_transform(*picker, object_id, transform) return;
+
+    for *update: editor_transform_updates {
+        if update.object_id != object_id continue;
+        update.transform = transform;
+        editor_transform_object_id = object_id;
+        editor_transform_matrix = transform;
+        editor_transform_changed = true;
+        return;
+    }
+
+    array_add(*editor_transform_updates, .{
+        object_id = object_id,
+        transform = transform,
+    });
     editor_transform_object_id = object_id;
     editor_transform_matrix = transform;
     editor_transform_changed = true;
@@ -87,35 +130,46 @@ begin_windowed_program_3d_transform_operation :: (
     mouse: Vector2,
 ) -> bool {
     if operation_type == .NONE || selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return false;
-    if !pickable_is_transformable(*picker, selected_object_id) return false;
-    transform, found := get_pickable_transform(*picker, selected_object_id);
-    if !found return false;
+    array_resize(*transform_operation.targets, 0);
+
+    pivot_sum: Vector3;
+    for object_id: selected_object_ids {
+        if !pickable_is_transformable(*picker, object_id) continue;
+        transform, found := get_pickable_transform(*picker, object_id);
+        if !found continue;
+
+        array_add(*transform_operation.targets, .{
+            object_id = object_id,
+            original_transform = transform,
+            preview_transform = transform,
+        });
+        pivot_sum += windowed_program_3d_transform_pivot(transform);
+    }
+    if transform_operation.targets.count == 0 return false;
 
     transform_operation.type = operation_type;
-    transform_operation.object_id = selected_object_id;
     transform_operation.axis_constraint = -1;
     transform_operation.start_mouse = mouse;
-    transform_operation.pivot = windowed_program_3d_transform_pivot(transform);
-    transform_operation.original_transform = transform;
-    transform_operation.preview_transform = transform;
+    transform_operation.pivot = pivot_sum / cast(float32) transform_operation.targets.count;
+    selection_cycle_valid = false;
     return true;
 }
 
 cancel_windowed_program_3d_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
     if transform_operation.type == .NONE return;
-    windowed_program_3d_publish_editor_transform(
-        base3d,
-        transform_operation.object_id,
-        transform_operation.original_transform,
-    );
-    transform_operation = .{};
-    transform_operation.axis_constraint = -1;
+    for target: transform_operation.targets {
+        windowed_program_3d_publish_editor_transform(
+            base3d,
+            target.object_id,
+            target.original_transform,
+        );
+    }
+    windowed_program_3d_clear_transform_operation(*transform_operation);
 }
 
 confirm_windowed_program_3d_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
     if transform_operation.type == .NONE return;
-    transform_operation = .{};
-    transform_operation.axis_constraint = -1;
+    windowed_program_3d_clear_transform_operation(*transform_operation);
 }
 
 update_windowed_program_3d_transform_operation :: (
@@ -124,14 +178,16 @@ update_windowed_program_3d_transform_operation :: (
     viewport_width: s32,
     viewport_height: s32,
 ) {
-    operation := *transform_operation;
+    operation := transform_operation;
     if operation.type == .NONE return;
-    if selected_object_id != operation.object_id {
-        cancel_windowed_program_3d_transform_operation(base3d);
-        return;
+    for target: operation.targets {
+        if !windowed_program_3d_selection_contains(base3d, target.object_id) {
+            cancel_windowed_program_3d_transform_operation(base3d);
+            return;
+        }
     }
 
-    result := operation.original_transform;
+    edit_transform := Matrix4_Identity;
     if operation.type == .MOVE {
         camera_forward := normalize(get_forward(*camera));
         plane_normal := camera_forward;
@@ -184,7 +240,7 @@ update_windowed_program_3d_transform_operation :: (
 
         delta := current_hit - start_hit;
         if operation.axis_constraint >= 0 delta = axis * dot(delta, axis);
-        result = make_translation_matrix4(delta) * operation.original_transform;
+        edit_transform = make_translation_matrix4(delta);
     } else if operation.type == .ROTATE {
         mouse_delta := mouse - operation.start_mouse;
         angle := (mouse_delta.x + mouse_delta.y * 0.35) * 0.01;
@@ -195,10 +251,9 @@ update_windowed_program_3d_transform_operation :: (
         set_from_axis_and_angle(*rotation, axis, angle);
         pivot_to_origin := make_translation_matrix4(-operation.pivot);
         origin_to_pivot := make_translation_matrix4(operation.pivot);
-        result = origin_to_pivot
+        edit_transform = origin_to_pivot
             * rotation_matrix(Matrix4, rotation)
-            * pivot_to_origin
-            * operation.original_transform;
+            * pivot_to_origin;
     } else if operation.type == .SCALE {
         mouse_delta := mouse - operation.start_mouse;
         scale_factor := max(0.01, 1.0 + (mouse_delta.x + mouse_delta.y * 0.35) * 0.005);
@@ -209,14 +264,16 @@ update_windowed_program_3d_transform_operation :: (
         }
         pivot_to_origin := make_translation_matrix4(-operation.pivot);
         origin_to_pivot := make_translation_matrix4(operation.pivot);
-        result = origin_to_pivot
+        edit_transform = origin_to_pivot
             * make_scale_matrix4(scale)
-            * pivot_to_origin
-            * operation.original_transform;
+            * pivot_to_origin;
     }
 
-    transform_operation.preview_transform = result;
-    windowed_program_3d_publish_editor_transform(base3d, operation.object_id, result);
+    for *target: operation.targets {
+        result := edit_transform * target.original_transform;
+        target.preview_transform = result;
+        windowed_program_3d_publish_editor_transform(base3d, target.object_id, result);
+    }
 }
 
 render_windowed_program_3d_transform_operation_status :: (
@@ -232,10 +289,11 @@ render_windowed_program_3d_transform_operation_status :: (
         else ifx transform_operation.axis_constraint == 2 then "Z"
         else "FREE";
     status := tprint(
-        "% [%]  |  X/Y/Z constrain  |  Left click confirm  |  Right click or Esc cancel",
+        "% [%] on % object(s)  |  X/Y/Z constrain  |  Left click confirm  |  Right click or Esc cancel",
         operation_name,
         axis_name,
+        transform_operation.targets.count,
     );
-    ui_cmd_rect(.{12, ui_ctx.window_h - 39, 570, 28}, .{0.035, 0.045, 0.065, 0.86});
+    ui_cmd_rect(.{12, ui_ctx.window_h - 39, 660, 28}, .{0.035, 0.045, 0.065, 0.86});
     ui_cmd_text(status, 20, ui_ctx.window_h - 20, 13, .{0.92, 0.94, 0.98, 1});
 }

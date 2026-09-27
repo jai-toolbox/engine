@@ -24,9 +24,6 @@ begin_windowed_program_3d_example_render :: (
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
     glClear(GL_DEPTH_BUFFER_BIT);
-
-    render_object_ids(*base.picker, base.world_to_camera, base.camera_to_clip);
-    glViewport(0, 0, cast(u32) base.window_width, cast(u32) base.window_height);
 }
 
 end_windowed_program_3d_example_render :: (base: *Windowed_Program_3D_Base) {
@@ -56,15 +53,26 @@ apply_windowed_program_3d_editor_transform :: (
     base: *Windowed_Program_3D_Base,
 ) {
     if !base.editor_transform_changed return;
-    if !set_renderable_transform(
-        program,
-        base.editor_transform_object_id,
-        base.editor_transform_matrix,
-    ) {
-        log_error(
-            "Could not apply the editor transform for object %",
+
+    if base.editor_transform_updates.count > 0 {
+        for update: base.editor_transform_updates {
+            if set_renderable_transform(program, update.object_id, update.transform) continue;
+            log_error("Could not apply the editor transform for object %", update.object_id);
+        }
+        array_resize(*base.editor_transform_updates, 0);
+    } else {
+        // Preserve the original scalar hand-off for programs that publish an
+        // editor transform directly instead of using the shared operation.
+        if !set_renderable_transform(
+            program,
             base.editor_transform_object_id,
-        );
+            base.editor_transform_matrix,
+        ) {
+            log_error(
+                "Could not apply the editor transform for object %",
+                base.editor_transform_object_id,
+            );
+        }
     }
     base.editor_transform_changed = false;
 }
