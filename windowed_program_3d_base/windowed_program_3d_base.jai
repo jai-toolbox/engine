@@ -100,6 +100,8 @@ Windowed_Program_3D_Base :: struct {
     camera_look_active := true;
     camera_velocity: Vector3;
     movement_mode: Movement_Mode;
+    camera_path: Windowed_Program_3D_Camera_Path;
+    camera_path_editor_enabled := true;
 
     picker: Windowed_Program_3D_Picker;
     selected_object_ids: [..] u32;
@@ -194,6 +196,7 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
 }
 
 deinit :: (using wp3b: *Windowed_Program_3D_Base) {
+    array_free(camera_path.keyframes);
     array_free(transform_operation.targets);
     array_free(editor_transform_updates);
     array_free(selected_object_ids);
@@ -535,6 +538,8 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
         );
     }
 
+    render_windowed_program_3d_camera_path(wp3b);
+
     if show_view_axis_gizmo {
         render_windowed_program_3d_view_axis_gizmo(
             world_to_camera,
@@ -665,7 +670,9 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     for Input.events_this_frame {
         if it.type == .KEYBOARD && it.key_pressed {
             if it.key_code == .ESCAPE {
-                if transform_operation.type != .NONE {
+                if camera_path.playing {
+                    set_windowed_program_3d_camera_path_playing(wp3b, false);
+                } else if transform_operation.type != .NONE {
                     cancel_windowed_program_3d_transform_operation(wp3b);
                 } else if current_menu == .CROSSHAIR_EDITOR {
                     current_menu = .USER_SETTINGS;
@@ -707,8 +714,13 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         }
     }
 
+    update_windowed_program_3d_camera_path_editor(wp3b);
+
     if right_mouse_just_pressed() && current_menu == .NONE {
-        if transform_operation.type != .NONE {
+        if camera_path.playing {
+            set_windowed_program_3d_camera_path_playing(wp3b, false);
+            set_windowed_program_3d_camera_look_active(wp3b, true);
+        } else if transform_operation.type != .NONE {
             cancel_windowed_program_3d_transform_operation(wp3b);
         } else {
             set_windowed_program_3d_camera_look_active(wp3b, !camera_look_active);
@@ -877,6 +889,7 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     selection_context_active := !camera_look_active
         && camera_mode != .TWO_DIMENSIONS
         && current_menu == .NONE
+        && !camera_path.playing
         && transform_operation.type == .NONE;
     if selection_context_active {
         mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
@@ -892,7 +905,27 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
                     selection_drag_start_mouse = mouse;
                     selection_drag_current_mouse = mouse;
                 } else {
-                    windowed_program_3d_select_at_mouse(wp3b, mouse, vw, vh, false);
+                    camera_keyframe_index, camera_keyframe_hit :=
+                        hit_test_windowed_program_3d_camera_path(wp3b, mouse, vw, vh);
+                    if camera_path_editor_enabled && camera_keyframe_hit {
+                        select_windowed_program_3d_camera_keyframe(
+                            wp3b,
+                            camera_keyframe_index,
+                            true,
+                        );
+                        selection_cycle_valid = false;
+
+                        // Keyframe selection can change both the camera pose and
+                        // projection after the ordinary matrix update above.
+                        world_to_camera = get_world_to_camera_matrix(*camera);
+                        camera_to_clip = get_projection_matrix(
+                            *camera,
+                            window_width,
+                            window_height,
+                        );
+                    } else {
+                        windowed_program_3d_select_at_mouse(wp3b, mouse, vw, vh, false);
+                    }
                 }
             }
 
@@ -921,7 +954,8 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         selection_rectangle_active = false;
     }
 
-    if !camera_look_active && camera_mode != .TWO_DIMENSIONS && current_menu == .NONE {
+    if !camera_look_active && !camera_path.playing &&
+       camera_mode != .TWO_DIMENSIONS && current_menu == .NONE {
         mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
         if mouse_position_available {
             mouse := Vector2.{cast(float) mouse_x, cast(float) mouse_y};
