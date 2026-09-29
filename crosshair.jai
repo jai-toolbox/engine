@@ -1,4 +1,4 @@
-// All selectable crosshairs are OBJ files. The nine defaults are generated
+// All selectable crosshairs are OBJ files. The eleven defaults are generated
 // when missing, so the installation need not carry preset OBJ assets.
 DEFAULT_CROSSHAIR_FILENAME :: "cross_with_hole.obj";
 

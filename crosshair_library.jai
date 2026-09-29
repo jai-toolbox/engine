@@ -13,7 +13,7 @@ CROSSHAIR_EDITOR_OBJECT_PREFIX :: "__crosshair_source_mx";
 CROSSHAIR_EDITOR_DERIVED_PREFIX :: "__crosshair_derived_";
 CROSSHAIR_COLOR_COMMENT :: "# crosshair-color ";
 CROSSHAIR_GRID_COMMENT :: "# crosshair-grid ";
-CROSSHAIR_DEFAULT_COUNT :: 9;
+CROSSHAIR_DEFAULT_COUNT :: 11;
 
 Crosshair_Library :: struct {
     paths: [..] string;
@@ -107,14 +107,60 @@ crosshair_obj_path :: (name: string) -> string {
     return tprint("%/%.obj", CROSSHAIR_LIBRARY_DIRECTORY, crosshair_snake_stem(name));
 }
 
+duplicate_crosshair_obj :: (source_path: string) -> (path: string, success: bool, reason: string) {
+    if !file_exists(source_path) return "", false, "The selected crosshair file no longer exists.";
+    filename := crosshair_obj_filename(source_path);
+    if !crosshair_has_suffix(filename, ".obj") {
+        return "", false, "Only OBJ crosshairs can be duplicated.";
+    }
+
+    contents, opened := read_entire_file(source_path, log_errors = false);
+    if !opened return "", false, "Could not read the selected crosshair.";
+    defer free(contents);
+
+    stem := slice(filename, 0, filename.count - 4);
+    copy_number: s32 = 1;
+    while true {
+        candidate := ifx copy_number == 1
+            then tprint("%/%_copy.obj", CROSSHAIR_LIBRARY_DIRECTORY, stem)
+            else tprint("%/%_copy_%.obj", CROSSHAIR_LIBRARY_DIRECTORY, stem, copy_number);
+        if file_exists(candidate) {
+            copy_number += 1;
+            continue;
+        }
+        if !write_entire_file(candidate, contents) {
+            return "", false, "Could not write the duplicated crosshair.";
+        }
+        return copy_string(candidate), true, "";
+    }
+}
+
 crosshair_default_filename :: (index: s32) -> string {
     names := string.[
         "dot.obj", "cross.obj", "x.obj", "cross_missing_top.obj",
         "cross_with_hole.obj", "x_with_hole.obj", "upward_caret.obj",
-        "cross_missing_top_bottom_with_hole.obj", "ring.obj",
+        "cross_missing_top_bottom_with_hole.obj", "ring.obj", "pin_wheel.obj",
+        "thin_ring_with_dot.obj",
     ];
     if index < 0 || index >= names.count return "";
     return names[index];
+}
+
+crosshair_is_default_path :: (path: string) -> bool {
+    filename := crosshair_obj_filename(path);
+    for i: 0..CROSSHAIR_DEFAULT_COUNT - 1 {
+        if filename == crosshair_default_filename(cast(s32) i) return true;
+    }
+    return false;
+}
+
+delete_custom_crosshair_obj :: (path: string) -> (success: bool, reason: string) {
+    if crosshair_is_default_path(path) {
+        return false, "Generated crosshair presets cannot be deleted.";
+    }
+    if !file_exists(path) return false, "The selected crosshair file no longer exists.";
+    if !file_delete(path) return false, "Could not delete the selected crosshair.";
+    return true, "";
 }
 
 normalize_existing_crosshair_files :: () {
@@ -212,8 +258,13 @@ crosshair_preset_round :: (value: float64) -> float {
     return cast(float) (ifx value < 0 then -rounded else rounded);
 }
 
-crosshair_preset_grid_point :: (point: Grid_Point) -> Grid_Point {
-    return .{500 + point.x, 500 - point.y};
+crosshair_preset_grid_point :: (model: *Polygon_Model, point: Grid_Point) -> Grid_Point {
+    center := cast(float) model.side * 0.5;
+    preset_to_grid := cast(float) model.side / 1000.0;
+    return .{
+        center + point.x * preset_to_grid,
+        center - point.y * preset_to_grid,
+    };
 }
 
 crosshair_preset_add_quad :: (model: *Polygon_Model, a: Grid_Point, b: Grid_Point,
@@ -221,10 +272,26 @@ crosshair_preset_add_quad :: (model: *Polygon_Model, a: Grid_Point, b: Grid_Poin
     polygon: Crosshair_Polygon;
     polygon.count = 4;
     polygon.color = .{0.95, 0.95, 0.95, 0.9};
-    polygon.vertices[0] = crosshair_preset_grid_point(a);
-    polygon.vertices[1] = crosshair_preset_grid_point(b);
-    polygon.vertices[2] = crosshair_preset_grid_point(c);
-    polygon.vertices[3] = crosshair_preset_grid_point(d);
+    polygon.vertices[0] = crosshair_preset_grid_point(model, a);
+    polygon.vertices[1] = crosshair_preset_grid_point(model, b);
+    polygon.vertices[2] = crosshair_preset_grid_point(model, c);
+    polygon.vertices[3] = crosshair_preset_grid_point(model, d);
+    assert(polygon_is_simple(polygon));
+    array_add(*model.polygons, polygon);
+}
+
+crosshair_preset_add_triangle :: (
+    model: *Polygon_Model,
+    a: Grid_Point,
+    b: Grid_Point,
+    c: Grid_Point,
+) {
+    polygon: Crosshair_Polygon;
+    polygon.count = 3;
+    polygon.color = .{0.95, 0.95, 0.95, 0.9};
+    polygon.vertices[0] = crosshair_preset_grid_point(model, a);
+    polygon.vertices[1] = crosshair_preset_grid_point(model, b);
+    polygon.vertices[2] = crosshair_preset_grid_point(model, c);
     assert(polygon_is_simple(polygon));
     array_add(*model.polygons, polygon);
 }
@@ -266,31 +333,36 @@ crosshair_preset_add_dot :: (model: *Polygon_Model) {
         angle := cast(float64) i * TAU64 / cast(float64) polygon.count;
         point := Grid_Point.{crosshair_preset_round(42.4 * cos(angle)),
                              crosshair_preset_round(42.4 * sin(angle))};
-        polygon.vertices[i] = crosshair_preset_grid_point(point);
+        polygon.vertices[i] = crosshair_preset_grid_point(model, point);
     }
     assert(polygon_is_simple(polygon));
     array_add(*model.polygons, polygon);
 }
 
-crosshair_preset_add_ring :: (model: *Polygon_Model) {
+crosshair_preset_add_ring :: (
+    model: *Polygon_Model,
+    inner_radius: float64 = 195.0,
+    outer_radius: float64 = 273.0,
+) {
     segments := 48;
     for i: 0..segments - 1 {
         a0 := cast(float64) i * TAU64 / cast(float64) segments;
         a1 := cast(float64) (i + 1) * TAU64 / cast(float64) segments;
-        inner0 := Grid_Point.{crosshair_preset_round(195.0 * cos(a0)),
-                              crosshair_preset_round(195.0 * sin(a0))};
-        outer0 := Grid_Point.{crosshair_preset_round(273.0 * cos(a0)),
-                              crosshair_preset_round(273.0 * sin(a0))};
-        outer1 := Grid_Point.{crosshair_preset_round(273.0 * cos(a1)),
-                              crosshair_preset_round(273.0 * sin(a1))};
-        inner1 := Grid_Point.{crosshair_preset_round(195.0 * cos(a1)),
-                              crosshair_preset_round(195.0 * sin(a1))};
+        inner0 := Grid_Point.{crosshair_preset_round(inner_radius * cos(a0)),
+                              crosshair_preset_round(inner_radius * sin(a0))};
+        outer0 := Grid_Point.{crosshair_preset_round(outer_radius * cos(a0)),
+                              crosshair_preset_round(outer_radius * sin(a0))};
+        outer1 := Grid_Point.{crosshair_preset_round(outer_radius * cos(a1)),
+                              crosshair_preset_round(outer_radius * sin(a1))};
+        inner1 := Grid_Point.{crosshair_preset_round(inner_radius * cos(a1)),
+                              crosshair_preset_round(inner_radius * sin(a1))};
         crosshair_preset_add_quad(model, inner0, outer0, outer1, inner1);
     }
 }
 
 make_default_crosshair :: (index: s32) -> Polygon_Model {
-    model := make_polygon_model(FINE_GRID_SIDE);
+    grid_side := cast(s32)(ifx index == 9 then DEFAULT_GRID_SIDE else FINE_GRID_SIDE);
+    model := make_polygon_model(grid_side);
     if index == 0 {
         crosshair_preset_add_dot(*model);
     } else if index == 1 || index == 3 {
@@ -315,6 +387,14 @@ make_default_crosshair :: (index: s32) -> Polygon_Model {
                                  .{198, -244}, .{244, -198});
     } else if index == 8 {
         crosshair_preset_add_ring(*model);
+    } else if index == 9 {
+        crosshair_preset_add_triangle(*model, .{-100, 200}, .{0, 0}, .{-200, 100});
+        crosshair_preset_add_triangle(*model, .{100, 200}, .{200, 100}, .{0, 0});
+        crosshair_preset_add_triangle(*model, .{0, 0}, .{-100, -200}, .{-200, -100});
+        crosshair_preset_add_triangle(*model, .{0, 0}, .{200, -100}, .{100, -200});
+    } else if index == 10 {
+        crosshair_preset_add_ring(*model, inner_radius = 245.0, outer_radius = 273.0);
+        crosshair_preset_add_dot(*model);
     }
     return model;
 }
@@ -325,7 +405,11 @@ generate_missing_default_crosshairs :: () {
         path := tprint("%/%", CROSSHAIR_LIBRARY_DIRECTORY, filename);
         if file_exists(path) continue; // Preserve edits to an existing preset.
         model := make_default_crosshair(cast(s32) i);
-        saved, reason := save_crosshair_obj(path, model, .{0.95, 0.95, 0.95, 0.9});
+        saved, reason := save_crosshair_obj(
+            path,
+            model,
+            .{0.95, 0.95, 0.95, 0.9},
+        );
         if !saved print("Could not generate default crosshair '%': %\n", path, reason);
         free_polygon_model(*model);
     }

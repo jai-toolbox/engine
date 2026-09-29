@@ -226,6 +226,7 @@ Windowed_Menu_Program :: struct {
     show_scene_graphics_settings := true;
     show_3d_graphics_settings := false;
     crosshair_editor: Engine_Crosshair_Editor;
+    crosshair_delete_confirmation: bool;
 }
 
 
@@ -572,7 +573,7 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     ui_begin_scroll_region_ex("user settings controls", body_height, 16);
     ui_spacing(12);
 
-    ui_slider_float("Sensitivity", *sensitivity, 0.01, 2.0);
+    ui_slider_float("Sensitivity", *sensitivity, 0.01, 5.0);
     ui_spacing(12);
     ui_checkbox("Show crosshair", *crosshair_settings.enabled);
 
@@ -581,6 +582,7 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
         for crosshair_file.library.paths labels[it_index] = crosshair_obj_display_name(it);
         selection := crosshair_file.selection;
         if ui_dropdown("Crosshair", labels, *selection) {
+            crosshair_delete_confirmation = false;
             crosshair_file.selection = selection;
             load_crosshair_file(*crosshair_file, crosshair_file.library.paths[selection]);
             crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
@@ -591,15 +593,68 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
         ui_label_disabled("No OBJ files in data/crosshairs.");
     }
 
-    if ui_button("Create your own crosshair") {
+    if ui_button("Create") {
+        crosshair_delete_confirmation = false;
         begin_new_engine_crosshair_editor(*crosshair_editor, crosshair_settings.color);
         current_menu = .CROSSHAIR_EDITOR;
     }
-    if crosshair_file.loaded && ui_button("Edit selected crosshair") {
+    if crosshair_file.loaded && ui_button("Duplicate") {
+        crosshair_delete_confirmation = false;
+        duplicate_path, duplicated, reason := duplicate_crosshair_obj(crosshair_file.path);
+        if duplicated {
+            refresh_crosshair_library(
+                *crosshair_file,
+                configuration.config_path,
+                crosshair_obj_filename(duplicate_path),
+            );
+            crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
+            crosshair_editor.status = "Duplicated and selected.";
+            free(duplicate_path);
+        } else {
+            crosshair_editor.status = reason;
+        }
+    }
+    if crosshair_file.loaded && ui_button("Edit") {
+        crosshair_delete_confirmation = false;
         if begin_edit_engine_crosshair_editor(*crosshair_editor, crosshair_file.path,
                                               crosshair_settings.color) {
             current_menu = .CROSSHAIR_EDITOR;
         }
+    }
+    selected_crosshair_is_custom := crosshair_file.loaded
+        && !crosshair_is_default_path(crosshair_file.path);
+    if selected_crosshair_is_custom {
+        if !crosshair_delete_confirmation {
+            if ui_button_colored("Delete", RED_NORMAL, RED_HOVER, RED_ACTIVE) {
+                crosshair_delete_confirmation = true;
+                crosshair_editor.status = "";
+            }
+        } else {
+            ui_label_disabled_wrapped(tprint(
+                "Permanently delete %?",
+                crosshair_obj_filename(crosshair_file.path),
+            ));
+            ui_begin_row();
+            if ui_button_colored("Confirm delete", RED_NORMAL, RED_HOVER, RED_ACTIVE) {
+                deleted, reason := delete_custom_crosshair_obj(crosshair_file.path);
+                crosshair_delete_confirmation = false;
+                if deleted {
+                    refresh_crosshair_library(
+                        *crosshair_file,
+                        configuration.config_path,
+                        DEFAULT_CROSSHAIR_FILENAME,
+                    );
+                    crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
+                    crosshair_editor.status = "Deleted the custom crosshair.";
+                } else {
+                    crosshair_editor.status = reason;
+                }
+            }
+            if ui_button("Cancel") crosshair_delete_confirmation = false;
+            ui_end_row();
+        }
+    } else {
+        crosshair_delete_confirmation = false;
     }
     if crosshair_editor.status.count > 0 ui_label_disabled(crosshair_editor.status);
 
@@ -612,6 +667,7 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     }
 
     if ui_button("Refresh crosshair files") {
+        crosshair_delete_confirmation = false;
         refresh_crosshair_library(*crosshair_file, configuration.config_path);
         crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
     }
@@ -636,6 +692,7 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     }
 
     if ui_button_colored("Back", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
+        crosshair_delete_confirmation = false;
         current_menu = menu_return_to;
     }
 

@@ -98,6 +98,8 @@ Windowed_Program_3D_Base :: struct {
     camera: Camera;
     camera_mode := Camera_Mode.FIRST_PERSON;
     camera_look_active := true;
+    camera_look_pointer_recenter_pending: bool;
+    camera_look_was_captured: bool;
     camera_velocity: Vector3;
     movement_mode: Movement_Mode;
     camera_path: Windowed_Program_3D_Camera_Path;
@@ -130,6 +132,8 @@ Windowed_Program_3D_Base :: struct {
     axis_alignment_threshold: float32 = 0.999;
     orthographic_view_height: float32 = 10.0;
     orthographic_projection_active: bool;
+    orthographic_pan_active: bool;
+    orthographic_pan_last_mouse: Vector2;
     show_view_axis_gizmo := true;
     view_preset_shortcuts_enabled := true;
     view_preset_focus: Vector3;
@@ -393,11 +397,60 @@ set_windowed_program_3d_camera_look_active :: (
     if camera_look_active == enabled return;
 
     camera_look_active = enabled;
+    camera_look_pointer_recenter_pending = enabled;
     camera_velocity = .{};
     selection_cycle_valid = false;
     selection_drag_active = false;
     selection_rectangle_active = false;
     if enabled set_windowed_program_3d_view_preset(wp3b, .PERSPECTIVE);
+}
+
+update_windowed_program_3d_orthographic_pan :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    viewport_width: s32,
+    viewport_height: s32,
+) {
+    can_pan := orthographic_projection_active
+        && !camera_look_active
+        && camera_mode != .TWO_DIMENSIONS
+        && current_menu == .NONE
+        && transform_operation.type == .NONE
+        && !camera_path.playing;
+    if !can_pan || !middle_mouse_pressed() {
+        orthographic_pan_active = false;
+        return;
+    }
+
+    mouse_x, mouse_y, mouse_available :=
+        Window_Creation.get_mouse_pointer_position(window, true);
+    if !mouse_available {
+        orthographic_pan_active = false;
+        return;
+    }
+
+    mouse := Vector2.{cast(float32) mouse_x, cast(float32) mouse_y};
+    if !orthographic_pan_active {
+        orthographic_pan_active = true;
+        orthographic_pan_last_mouse = mouse;
+        return;
+    }
+
+    mouse_delta := mouse - orthographic_pan_last_mouse;
+    orthographic_pan_last_mouse = mouse;
+    safe_width := max(viewport_width, 1);
+    safe_height := max(viewport_height, 1);
+    aspect := cast(float32) safe_width / cast(float32) safe_height;
+    orthographic_width := orthographic_view_height * aspect;
+    world_units_per_pixel_x := orthographic_width / cast(float32) safe_width;
+    world_units_per_pixel_y := orthographic_view_height / cast(float32) safe_height;
+    translation := -normalize(get_right(*camera))
+            * mouse_delta.x * world_units_per_pixel_x
+        - normalize(get_up(*camera))
+            * mouse_delta.y * world_units_per_pixel_y;
+    camera.position += translation;
+    if axis_view_active view_preset_focus += translation;
+    camera_velocity = .{};
+    selection_cycle_valid = false;
 }
 
 windowed_program_3d_grid_plane :: (using wp3b: *Windowed_Program_3D_Base) -> Grid_Plane {
@@ -516,15 +569,14 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
     );
 
     if show_grid {
-        glDepthMask(GL_FALSE);
         render(
             *grid,
             camera_to_clip,
             world_to_camera,
             camera.position,
             windowed_program_3d_grid_plane(wp3b),
+            place_at_far_depth = orthographic_projection_active && axis_view_active,
         );
-        glDepthMask(GL_TRUE);
     }
 
     if selection_outline_ready {
@@ -731,36 +783,54 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
                          && current_menu == .NONE
                          && camera_mode != .TWO_DIMENSIONS
                          && window_has_focus;
+    if want_cursor_captured && !camera_look_was_captured {
+        camera_look_pointer_recenter_pending = true;
+    }
+    camera_look_was_captured = want_cursor_captured;
 
     if want_cursor_captured {
         hide_cursor(*wp);
-        #if OS == .WINDOWS {
+        if camera_look_pointer_recenter_pending {
             keep_mouse_in_center_of_screen(*wp);
-            update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
-        } else #if OS == .LINUX {
-            dx := 0;
-            dy := 0;
+            Input.mouse_delta_x = 0;
+            Input.mouse_delta_y = 0;
+            raw_mouse_dx = 0;
+            raw_mouse_dy = 0;
+            raw_mouse_events = 0;
+            _, _, recenter_width, recenter_height :=
+                Window_Creation.get_dimensions(window, right_handed_mouse_position);
+            camera.last_mouse_x = recenter_width / 2;
+            camera.last_mouse_y = recenter_height / 2;
+            camera_look_pointer_recenter_pending = false;
+        } else {
+            #if OS == .WINDOWS {
+                keep_mouse_in_center_of_screen(*wp);
+                update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
+            } else #if OS == .LINUX {
+                dx := 0;
+                dy := 0;
 
-            if raw_mouse_events > 0 {
-                dx = cast(int) raw_mouse_dx;
-                dy = cast(int) raw_mouse_dy;
-            } else if linux_nonzero_motion_events > 0 {
-                dx = linux_motion_dx;
-                dy = linux_motion_dy;
+                if raw_mouse_events > 0 {
+                    dx = cast(int) raw_mouse_dx;
+                    dy = cast(int) raw_mouse_dy;
+                } else if linux_nonzero_motion_events > 0 {
+                    dx = linux_motion_dx;
+                    dy = linux_motion_dy;
+                } else {
+                    x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
+                    _, _, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
+                    if success {
+                        dx = x - w / 2;
+                        dy = y - h / 2;
+                    }
+                }
+
+                update_angles_with_deltas(*camera, dx, dy);
+                keep_mouse_in_center_of_screen(*wp);
             } else {
                 x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
-                _, _, w, h := Window_Creation.get_dimensions(window, right_handed_mouse_position);
-                if success {
-                    dx = x - w / 2;
-                    dy = y - h / 2;
-                }
+                if success update_angles(*camera, x, y);
             }
-
-            update_angles_with_deltas(*camera, dx, dy);
-            keep_mouse_in_center_of_screen(*wp);
-        } else {
-            x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
-            if success update_angles(*camera, x, y);
         }
     } else {
         show_cursor(*wp);
@@ -787,8 +857,6 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
 
     if movement_mode != .MANUAL && want_cursor_captured camera.position += camera_velocity * delta_time;
 
-    update_listener_orientation(camera.position, camera.yaw);
-
     if orthographic_projection_active && current_menu == .NONE {
         for Input.events_this_frame {
             if it.type != .MOUSE_WHEEL continue;
@@ -800,6 +868,9 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
             orthographic_view_height = clamp(orthographic_view_height, 0.1, 10000.0);
         }
     }
+
+    update_windowed_program_3d_orthographic_pan(wp3b, vw, vh);
+    update_listener_orientation(camera.position, camera.yaw);
 
     // handle 2d drag and scroll
     if camera_mode == .TWO_DIMENSIONS && current_menu == .NONE {

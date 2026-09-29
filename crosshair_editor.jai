@@ -103,6 +103,8 @@ save_engine_crosshair_editor :: (wp: *Windowed_Menu_Program) -> bool {
         return false;
     }
     path := crosshair_obj_path(name);
+    renaming := editor.current_path.count > 0 && path != editor.current_path;
+    renaming_standard := renaming && crosshair_is_default_path(editor.current_path);
     if file_exists(path) && path != editor.current_path {
         editor.status = "That name already exists. Choose another name or edit the existing crosshair.";
         return false;
@@ -112,13 +114,26 @@ save_engine_crosshair_editor :: (wp: *Windowed_Menu_Program) -> bool {
         editor.status = reason;
         return false;
     }
+    if renaming && !renaming_standard && file_exists(editor.current_path) {
+        if !file_delete(editor.current_path) {
+            file_delete(path);
+            editor.status = "Could not rename the original crosshair; the save was rolled back.";
+            return false;
+        }
+    }
     if editor.current_path.count > 0 free(editor.current_path);
     editor.current_path = copy_string(path);
     refresh_crosshair_library(*wp.crosshair_file, wp.configuration.config_path,
                                      crosshair_obj_filename(path));
     wp.crosshair_settings.enabled = true;
     wp.crosshair_settings.color = editor.color;
-    editor.status = "Saved and selected. Changes now appear as the custom crosshair.";
+    if renaming_standard {
+        editor.status = "Saved as a custom crosshair; the generated preset was preserved.";
+    } else if renaming {
+        editor.status = "Renamed, saved, and selected.";
+    } else {
+        editor.status = "Saved and selected.";
+    }
     return true;
 }
 
@@ -135,11 +150,11 @@ engine_crosshair_editor_layout :: (editor: Engine_Crosshair_Editor,
     result: Engine_Crosshair_Layout;
     panel_w := clamp(window_w * 0.27, 280.0, 400.0);
     gap: float32 = 32;
-    side := max(2.0, min(window_h - 166.0, window_w - panel_w - gap - 64.0));
+    side := max(2.0, min(window_h - 96.0, window_w - panel_w - gap - 64.0));
     side = cast(float32) (cast(s32) side - (cast(s32) side % 2));
     x := (window_w - side - gap - panel_w) * 0.5;
-    result.grid = .{x, 112, side, side};
-    result.panel = .{x + side + gap, 96, panel_w, window_h - 142};
+    result.grid = .{x, 42, side, side};
+    result.panel = .{x + side + gap, 28, panel_w, window_h - 74};
     preview_h := clamp(window_h * 0.18, 120.0, 185.0);
     result.preview = .{result.panel.x + 16, window_h - preview_h - 56,
                       panel_w - 32, preview_h};
@@ -394,22 +409,9 @@ render_engine_crosshair_editor :: (wp: *Windowed_Menu_Program) {
     layout = engine_crosshair_editor_layout(editor.*, ctx.window_w, ctx.window_h);
 
     ui_cmd_rect(.{0, 0, ctx.window_w, ctx.window_h}, .{0.035, 0.055, 0.08, 1});
-    ui_cmd_rect(.{0, 0, ctx.window_w, 78}, .{0.08, 0.12, 0.18, 1});
-    ui_cmd_text("CROSSHAIR EDITOR", layout.grid.x, 40, 18, .{0.92, 0.96, 1, 1});
     ui_cmd_text("The grid below represents 1 x 1 inch on your monitor.",
-                layout.grid.x, 100, 16, .{0.65, 0.75, 0.81, 1});
+                layout.grid.x, 30, 16, .{0.65, 0.75, 0.81, 1});
     engine_crosshair_editor_draw_grid(editor.*, layout);
-
-    ui_push_layout(.{
-        mode = .VERTICAL, cursor_x = layout.panel.x + 16, cursor_y = 20,
-        origin_x = layout.panel.x + 16, origin_y = 20,
-        max_w = layout.panel.w - 32, max_h = 44, visible_h = 44,
-    });
-    ui_begin_row();
-    if ui_button("Save crosshair") save_engine_crosshair_editor(wp);
-    if ui_button("Back") wp.current_menu = .USER_SETTINGS;
-    ui_end_row();
-    ui_pop_layout();
 
     ui_push_layout(.{
         mode = .VERTICAL,
@@ -420,7 +422,33 @@ render_engine_crosshair_editor :: (wp: *Windowed_Menu_Program) {
     });
     ui_begin_scroll_region_ex("crosshair editor controls", layout.controls_height, 16);
     ui_spacing(12);
+    ui_begin_row();
+    if ui_button("Save") save_engine_crosshair_editor(wp);
+    if ui_button("Back") wp.current_menu = .USER_SETTINGS;
+    ui_end_row();
+    ui_separator();
     ui_text_input("Name", *editor.name, *editor.name_length);
+    editor_name := engine_crosshair_editor_name(editor);
+    if editor.current_path.count > 0 && crosshair_valid_name(editor_name) {
+        pending_path := crosshair_obj_path(editor_name);
+        if pending_path != editor.current_path {
+            old_filename := crosshair_obj_filename(editor.current_path);
+            new_filename := crosshair_obj_filename(pending_path);
+            if crosshair_is_default_path(editor.current_path) {
+                ui_label_disabled_wrapped(tprint(
+                    "% is a generated preset and will remain; the edited crosshair will be saved as %.",
+                    old_filename,
+                    new_filename,
+                ));
+            } else {
+                ui_label_disabled_wrapped(tprint(
+                    "% will be renamed to % when saved.",
+                    old_filename,
+                    new_filename,
+                ));
+            }
+        }
+    }
     ui_label_disabled("OBJ files are saved in data/crosshairs.");
     ui_separator();
     snap_grid: s32 = cast(s32) (ifx editor.model.side == FINE_GRID_SIDE then 1 else 0);
