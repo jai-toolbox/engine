@@ -115,8 +115,8 @@ Windowed_Program_3D_Base :: struct {
     selection_outline_color: Vector4 = .{1.0, 0.7, 0.0, 1.0};
     selection_outline_thickness_px: u32 = 3;
     selection_outline_occluded_alpha: float32 = 0.32;
-    // Three representable steps of a 24-bit depth buffer, matching Blender's
-    // outline occlusion tolerance.
+    // Three representable steps of a 24-bit depth buffer cover quantization
+    // noise without leaking through meaningfully separated foreground surfaces.
     selection_outline_depth_epsilon: float32 = 3.0 / 8388608.0;
     selection_cycle_last_mouse: Vector2;
     selection_cycle_mouse_threshold_px: float32 = 3.0;
