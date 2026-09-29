@@ -7,15 +7,26 @@ key_pressed :: inline (key : Input.Key_Code) -> bool {
 }
 
 key_just_pressed :: inline (key : Input.Key_Code) -> bool {
-    return (Input.input_button_states[cast (s64) key] & .START) != 0;
+    if (Input.input_button_states[cast (s64) key] & .START) != 0 return true;
+
+    /*
+    a fast desktop click/key tap can press and release between two rendered
+    frames. In that case the aggregate state ends at END, but the press is
+    still present in this frame's ordered event stream.
+    */
+    for event: Input.events_this_frame {
+        if event.type == .KEYBOARD && event.key_pressed != 0 &&
+           event.key_code == key return true;
+    }
+    return false;
 }
 
 right_mouse_just_pressed :: () -> bool {
-    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_RIGHT] & .START != 0;
+    return key_just_pressed(Input.Key_Code.MOUSE_BUTTON_RIGHT);
 }
 
 left_mouse_just_pressed :: () -> bool {
-    return Input.input_button_states[Input.Key_Code.MOUSE_BUTTON_LEFT] & .START != 0;
+    return key_just_pressed(Input.Key_Code.MOUSE_BUTTON_LEFT);
 }
 
 left_mouse_pressed :: () -> bool {

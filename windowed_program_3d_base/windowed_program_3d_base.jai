@@ -105,18 +105,33 @@ Windowed_Program_3D_Base :: struct {
     camera_path: Windowed_Program_3D_Camera_Path;
     camera_path_editor_enabled := true;
 
+    /*
+    desktop tools can retain the shared editor/navigation behavior without
+    exposing the game-oriented Escape menu, and can limit mouse interaction
+    to the scene viewport when inspectors surround it.
+    */
+    escape_opens_menu := true;
+    editor_input_enabled := true;
+    editor_input_region_enabled: bool;
+    editor_input_region_min: Vector2;
+    editor_input_region_max: Vector2;
+
     picker: Windowed_Program_3D_Picker;
     selected_object_ids: [..] u32;
-    // The active object is the most recently selected member of
-    // selected_object_ids. Keep this scalar for existing callers that need one
-    // primary renderable.
+    /*
+    the active object is the most recently selected member of
+    selected_object_ids. Keep this scalar for existing callers that need one
+    primary renderable.
+    */
     selected_object_id: u32;
     selection_changed: bool;
     selection_outline_color: Vector4 = .{1.0, 0.7, 0.0, 1.0};
     selection_outline_thickness_px: u32 = 3;
     selection_outline_occluded_alpha: float32 = 0.32;
-    // Three representable steps of a 24-bit depth buffer cover quantization
-    // noise without leaking through meaningfully separated foreground surfaces.
+    /*
+    three representable steps of a 24-bit depth buffer cover quantization
+    noise without leaking through meaningfully separated foreground surfaces.
+    */
     selection_outline_depth_epsilon: float32 = 3.0 / 8388608.0;
     selection_cycle_last_mouse: Vector2;
     selection_cycle_mouse_threshold_px: float32 = 3.0;
@@ -163,7 +178,7 @@ Windowed_Program_3D_Base :: struct {
     drag_start_mouse: Vector2;
     drag_start_center: Vector2;
 
-    // Updated by per_frame_update. Applications upload these to their own shaders.
+    // updated by per_frame_update. Applications upload these to their own shaders.
     world_to_camera: Matrix4 = Matrix4_Identity;
     camera_to_clip: Matrix4 = Matrix4_Identity;
 }
@@ -186,8 +201,10 @@ init :: (using wp3b: *Windowed_Program_3D_Base) {
     performance_graph.graph_min_ms = min_frame_time * 1000 - 1;
     performance_graph.graph_max_ms = min_frame_time * 1000 + 5;
 
-    // Enumerate fullscreen display modes before loading settings. Windowed
-    // dimensions continue to follow ordinary user-driven window resizing.
+    /*
+    enumerate fullscreen display modes before loading settings. Windowed
+    dimensions continue to follow ordinary user-driven window resizing.
+    */
     enumerate_fullscreen_resolutions(*wp);
 
     // menu_fullscreen_checkbox = fullscreen;
@@ -405,6 +422,30 @@ set_windowed_program_3d_camera_look_active :: (
     if enabled set_windowed_program_3d_view_preset(wp3b, .PERSPECTIVE);
 }
 
+windowed_program_3d_editor_input_contains :: (
+    using wp3b: *Windowed_Program_3D_Base,
+    mouse: Vector2,
+) -> bool {
+    if !editor_input_enabled return false;
+    if !editor_input_region_enabled return true;
+    return mouse.x >= editor_input_region_min.x
+        && mouse.y >= editor_input_region_min.y
+        && mouse.x < editor_input_region_max.x
+        && mouse.y < editor_input_region_max.y;
+}
+
+windowed_program_3d_pointer_in_editor_input :: (
+    using wp3b: *Windowed_Program_3D_Base,
+) -> bool {
+    mouse_x, mouse_y, available :=
+        Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
+    if !available return false;
+    return windowed_program_3d_editor_input_contains(
+        wp3b,
+        .{cast(float32) mouse_x, cast(float32) mouse_y},
+    );
+}
+
 update_windowed_program_3d_orthographic_pan :: (
     using wp3b: *Windowed_Program_3D_Base,
     viewport_width: s32,
@@ -429,6 +470,8 @@ update_windowed_program_3d_orthographic_pan :: (
     }
 
     mouse := Vector2.{cast(float32) mouse_x, cast(float32) mouse_y};
+    if !orthographic_pan_active &&
+       !windowed_program_3d_editor_input_contains(wp3b, mouse) return;
     if !orthographic_pan_active {
         orthographic_pan_active = true;
         orthographic_pan_last_mouse = mouse;
@@ -529,8 +572,10 @@ windowed_program_3d_add_rectangle_selection :: (
         array_add(*selected_object_ids, object_id);
         selection_changed = true;
     }
-    // Keep an existing active object stable; rectangle traversal order is an
-    // implementation detail and should not unexpectedly replace it.
+    /*
+    keep an existing active object stable; rectangle traversal order is an
+    implementation detail and should not unexpectedly replace it.
+    */
     if selected_object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID &&
        selected_object_ids.count > 0 {
         selected_object_id = selected_object_ids[selected_object_ids.count - 1];
@@ -593,9 +638,13 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
     render_windowed_program_3d_camera_path(wp3b);
 
     if show_view_axis_gizmo {
+        viewport_right := ifx editor_input_region_enabled
+            then editor_input_region_max.x
+            else ui_ctx.window_w;
         render_windowed_program_3d_view_axis_gizmo(
             world_to_camera,
             orthographic_projection_active,
+            viewport_right,
         );
     }
 
@@ -717,8 +766,10 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
 
     camera.sensitivity = sensitivity;
 
-    // handle ESC to toggle in-game menu
-    // handle M to toggle mouse cursor without opening menu
+    /*
+    handle ESC to toggle in-game menu
+    handle M to toggle mouse cursor without opening menu
+    */
     for Input.events_this_frame {
         if it.type == .KEYBOARD && it.key_pressed {
             if it.key_code == .ESCAPE {
@@ -728,10 +779,10 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
                     cancel_windowed_program_3d_transform_operation(wp3b);
                 } else if current_menu == .CROSSHAIR_EDITOR {
                     current_menu = .USER_SETTINGS;
-                } else if !camera_look_active {
+                } else if escape_opens_menu && !camera_look_active {
                     // if mouse mode is active, pressing ESC should re-lock the camera first
                     set_windowed_program_3d_camera_look_active(wp3b, true);
-                } else {
+                } else if escape_opens_menu {
                     toggle_menu(*wp);
                 }
             }
@@ -774,7 +825,7 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
             set_windowed_program_3d_camera_look_active(wp3b, true);
         } else if transform_operation.type != .NONE {
             cancel_windowed_program_3d_transform_operation(wp3b);
-        } else {
+        } else if windowed_program_3d_pointer_in_editor_input(wp3b) {
             set_windowed_program_3d_camera_look_active(wp3b, !camera_look_active);
         }
     }
@@ -857,7 +908,8 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
 
     if movement_mode != .MANUAL && want_cursor_captured camera.position += camera_velocity * delta_time;
 
-    if orthographic_projection_active && current_menu == .NONE {
+    if orthographic_projection_active && current_menu == .NONE &&
+       windowed_program_3d_pointer_in_editor_input(wp3b) {
         for Input.events_this_frame {
             if it.type != .MOUSE_WHEEL continue;
             if it.wheel_delta > 0 {
@@ -957,7 +1009,8 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         resize(*picker, picker_width, picker_height);
     }
 
-    selection_context_active := !camera_look_active
+    selection_context_active := editor_input_enabled
+        && !camera_look_active
         && camera_mode != .TWO_DIMENSIONS
         && current_menu == .NONE
         && !camera_path.playing
@@ -966,10 +1019,11 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
         if mouse_position_available {
             mouse := Vector2.{cast(float32) mouse_x, cast(float32) mouse_y};
+            mouse_in_editor := windowed_program_3d_editor_input_contains(wp3b, mouse);
             shift_down := key_pressed(Input.Key_Code.SHIFT);
             left_down := left_mouse_pressed();
 
-            if left_mouse_just_pressed() {
+            if left_mouse_just_pressed() && mouse_in_editor {
                 if shift_down {
                     selection_drag_active = true;
                     selection_rectangle_active = false;
@@ -986,8 +1040,10 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
                         );
                         selection_cycle_valid = false;
 
-                        // Keyframe selection can change both the camera pose and
-                        // projection after the ordinary matrix update above.
+                        /*
+                        keyframe selection can change both the camera pose and
+                        projection after the ordinary matrix update above.
+                        */
                         world_to_camera = get_world_to_camera_matrix(*camera);
                         camera_to_clip = get_projection_matrix(
                             *camera,
@@ -1030,8 +1086,10 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
         mouse_x, mouse_y, mouse_position_available := Window_Creation.get_mouse_pointer_position(window, true);
         if mouse_position_available {
             mouse := Vector2.{cast(float) mouse_x, cast(float) mouse_y};
+            mouse_in_editor := windowed_program_3d_editor_input_contains(wp3b, mouse);
 
-            if transform_operation.type == .NONE && selected_object_id != WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
+            if transform_operation.type == .NONE && mouse_in_editor &&
+               selected_object_id != WINDOWED_PROGRAM_3D_NO_OBJECT_ID {
                 if key_just_pressed(xx #char "G") {
                     begin_windowed_program_3d_transform_operation(wp3b, .MOVE, mouse);
                 } else if key_just_pressed(xx #char "R") {

@@ -35,9 +35,11 @@ Windowed_Program_3D_Pickable :: struct {
     local_bounds_max: Vector3;
     local_bounds_valid: bool;
 
-    // we store this data because we want to allow picking on animated things
-    // but then the shader doesn't accept in bone things yet so we do a cpu side and rebuffer
-    // which is really bad but works for now I guess.
+    /*
+    we store this data because we want to allow picking on animated things
+    but then the shader doesn't accept in bone things yet so we do a cpu side and rebuffer
+    which is really bad but works for now I guess.
+    */
     bind_positions: [..] Vector3;
     bone_transform_indices: [..] [4] u32;
     bone_weights: [..] [4] float32;
@@ -250,6 +252,25 @@ add_skeletal_pickable :: (
     array_copy(*pickable.bone_transform_indices, geometry.bone_transform_indices);
     array_copy(*pickable.bone_weights, geometry.bone_weights);
     return object_id;
+}
+
+remove_pickable :: (
+    using picker: *Windowed_Program_3D_Picker,
+    object_id: u32,
+) -> bool {
+    if object_id == WINDOWED_PROGRAM_3D_NO_OBJECT_ID return false;
+
+    for *pickable, index: pickables {
+        if pickable.object_id != object_id continue;
+
+        deinit(*pickable.mesh, *selected_depth_renderer);
+        array_free(pickable.bind_positions);
+        array_free(pickable.bone_transform_indices);
+        array_free(pickable.bone_weights);
+        array_ordered_remove_by_index(*pickables, index);
+        return true;
+    }
+    return false;
 }
 
 update_skeletal_pickables :: (
@@ -529,8 +550,10 @@ windowed_program_3d_projected_triangle_overlaps_rectangle :: (
     ];
     triangle := Vector2.[a, b, c];
 
-    // X and Y were tested by the bounding boxes above. The remaining SAT
-    // axes are the normals of the triangle's three edges.
+    /*
+    x and Y were tested by the bounding boxes above. The remaining SAT
+    axes are the normals of the triangle's three edges.
+    */
     for edge_index: 0..2 {
         edge := triangle[(edge_index + 1) % 3] - triangle[edge_index];
         axis := Vector2.{-edge.y, edge.x};
@@ -647,10 +670,12 @@ prepare_selection_outline :: (
     set_camera_to_clip_uniform(*selected_depth_renderer, camera_to_clip);
     glUseProgram(0);
 
-    // Render both depth textures through the same position-only shader. This
-    // keeps visible selected surfaces bit-stable across every scene renderer;
-    // the ordinary material shader's matrix evaluation cannot create false
-    // x-ray segments at grazing angles.
+    /*
+    render both depth textures through the same position-only shader. This
+    keeps visible selected surfaces bit-stable across every scene renderer;
+    the ordinary material shader's matrix evaluation cannot create false
+    x-ray segments at grazing angles.
+    */
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_depth_framebuffer_gl_handle);
     glClear(GL_DEPTH_BUFFER_BIT);
     for pickable: pickables queue_render(*selected_depth_renderer, pickable.mesh);

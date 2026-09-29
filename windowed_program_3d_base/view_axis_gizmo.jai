@@ -98,10 +98,12 @@ windowed_program_3d_draw_view_axis_arm :: (
 render_windowed_program_3d_view_axis_gizmo :: (
     world_to_camera: Matrix4,
     orthographic_projection: bool,
+    viewport_right_px: float32 = -1,
 ) {
     if ui_ctx == null return;
 
-    center := Vector2.{ui_ctx.window_w - 72.0, 72.0};
+    right_edge := ifx viewport_right_px >= 0 then viewport_right_px else ui_ctx.window_w;
+    center := Vector2.{right_edge - 72.0, 72.0};
     axis_radius: float32 = 39.0;
 
     windowed_program_3d_draw_screen_circle(
@@ -128,9 +130,11 @@ render_windowed_program_3d_view_axis_gizmo :: (
         axis.view_depth = view_direction_4.z;
     }
 
-    // UI rendering has no depth buffer, so represent the three axes as six
-    // independently sortable half-arms. An axis's positive and negative arms
-    // always have opposite camera-space depths and cannot be drawn as a bundle.
+    /*
+    ui rendering has no depth buffer, so represent the three axes as six
+    independently sortable half-arms. An axis's positive and negative arms
+    always have opposite camera-space depths and cannot be drawn as a bundle.
+    */
     arms: [6] Windowed_Program_3D_View_Axis_Arm;
     arm_index := 0;
     for axis: axes {
@@ -163,8 +167,10 @@ render_windowed_program_3d_view_axis_gizmo :: (
         arm_index += 1;
     }
 
-    // Camera-space Z increases toward the viewer. Painter-sort the half-arms
-    // from far to near and insert the origin hub at camera-space depth zero.
+    /*
+    camera-space Z increases toward the viewer. Painter-sort the half-arms
+    from far to near and insert the origin hub at camera-space depth zero.
+    */
     for i: 0..arms.count - 2 {
         for j: i + 1..arms.count - 1 {
             if arms[j].view_depth < arms[i].view_depth swap(*arms[i], *arms[j]);
