@@ -366,7 +366,7 @@ network_diag_draw_time_series_graph :: (
     count := history.count;
     if count > 0 {
         bar_w := rect.w / cast(float32) count;
-        idx := history.tail;
+        idx := history.index_of_oldest;
 
         for i : 0..count - 1 {
             val := cast(float) history.data[idx];
@@ -400,7 +400,7 @@ network_diag_draw_timeline_graph :: (
     if count == 0 return;
 
     bar_w := rect.w / cast(float32) count;
-    idx := history.tail;
+    idx := history.index_of_oldest;
 
     for i : 0..count - 1 {
         val := history.data[idx];

@@ -305,7 +305,7 @@ create_time_series_graph :: (
         points: [N] Vector2;
         point_count := 0;
 
-        idx := history.tail;
+        idx := history.index_of_oldest;
         for i: 0..count-1 {
             x_norm := cast(float) i / cast(float) max(count - 1, 1);
             val := cast(float) history.data[idx];
@@ -356,7 +356,7 @@ create_colored_timeline_strip :: (
 
     bar_width := graph_size.x / cast(float) count;
 
-    idx := history.tail;
+    idx := history.index_of_oldest;
     for i: 0..count-1 {
         val := history.data[idx];
 
