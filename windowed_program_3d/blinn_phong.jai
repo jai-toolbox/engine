@@ -66,7 +66,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_Blinn_Phong) {
     per_frame_update(*base_3d);
     apply_windowed_program_3d_editor_transform(program, *base_3d);
 
-    glUseProgram(renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
     set_camera_to_clip_uniform(*renderer, camera_to_clip);
     set_camera_position_uniform(*renderer, camera.position);
@@ -79,7 +79,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_Blinn_Phong) {
     set_packed_textures_uniform(*renderer, 0);
     set_packed_texture_bounding_boxes_uniform(*renderer, 1);
     set_blinn_phong_material_table_uniform(*renderer, 2);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
 }
 
 render_scene :: (using program: *Windowed_Program_3D_Blinn_Phong) {

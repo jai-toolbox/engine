@@ -61,10 +61,10 @@ get_selected_renderable :: (using program: *Windowed_Program_3D_Vertex_Colors) -
 per_frame_update :: (using program: *Windowed_Program_3D_Vertex_Colors) {
     per_frame_update(*base_3d);
     apply_windowed_program_3d_editor_transform(program, *base_3d);
-    glUseProgram(renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
     set_camera_to_clip_uniform(*renderer, camera_to_clip);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
 }
 
 render_scene :: (using program: *Windowed_Program_3D_Vertex_Colors) {

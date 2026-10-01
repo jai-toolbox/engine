@@ -64,7 +64,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_PBR_Lightmapped) {
     per_frame_update(*base_3d);
     apply_windowed_program_3d_editor_transform(program, *base_3d);
 
-    glUseProgram(renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
     set_camera_to_clip_uniform(*renderer, camera_to_clip);
     set_camera_position_uniform(*renderer, camera.position);
@@ -77,15 +77,15 @@ per_frame_update :: (using program: *Windowed_Program_3D_PBR_Lightmapped) {
     set_packed_texture_bounding_boxes_uniform(*renderer, 1);
     set_pbr_material_table_uniform(*renderer, 2);
     set_lightmap_texture_uniform(*renderer, 3);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
 }
 
 render_scene :: (using program: *Windowed_Program_3D_PBR_Lightmapped) {
     begin_windowed_program_3d_example_render(*base_3d, clear_color);
     bind_windowed_program_3d_example_material_textures(material_textures);
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, lightmap_texture_gl_id);
-    glActiveTexture(GL_TEXTURE0);
+    gl_set_active_texture_unit(GL_TEXTURE3);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, lightmap_texture_gl_id);
+    gl_set_active_texture_unit(GL_TEXTURE0);
     for renderable: renderables queue_render(*renderer, renderable);
     begin_windowed_program_3d_geometry_render(*base_3d);
     render(*renderer);

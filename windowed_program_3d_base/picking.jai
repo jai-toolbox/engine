@@ -93,7 +93,7 @@ resize :: (using picker: *Windowed_Program_3D_Picker, new_width: u32, new_height
     width = new_width;
     height = new_height;
 
-    glBindTexture(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
@@ -106,7 +106,7 @@ resize :: (using picker: *Windowed_Program_3D_Picker, new_width: u32, new_height
         null,
     );
 
-    glBindTexture(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
@@ -119,7 +119,7 @@ resize :: (using picker: *Windowed_Program_3D_Picker, new_width: u32, new_height
         null,
     );
 
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_depth_framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, scene_depth_framebuffer_gl_handle);
     glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_DEPTH_ATTACHMENT,
@@ -136,7 +136,7 @@ resize :: (using picker: *Windowed_Program_3D_Picker, new_width: u32, new_height
         log_error("Windowed Program 3D scene-depth framebuffer incomplete, status: 0x%", formatInt(scene_status, base = 16));
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, selected_depth_framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, selected_depth_framebuffer_gl_handle);
     glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_DEPTH_ATTACHMENT,
@@ -156,8 +156,8 @@ resize :: (using picker: *Windowed_Program_3D_Picker, new_width: u32, new_height
         glClear(GL_DEPTH_BUFFER_BIT);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, 0);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, 0);
     return scene_depth_framebuffer_complete && selected_depth_framebuffer_complete;
 }
 
@@ -174,19 +174,19 @@ init :: (
     glGenFramebuffers(1, *selected_depth_framebuffer_gl_handle);
 
     glGenTextures(1, *scene_depth_texture_gl_handle);
-    glBindTexture(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glGenTextures(1, *selected_depth_texture_gl_handle);
-    glBindTexture(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, 0);
 
     return resize(picker, initial_width, initial_height);
 }
@@ -200,14 +200,14 @@ deinit :: (using picker: *Windowed_Program_3D_Picker) {
     }
     array_free(pickables);
 
-    if outline_vao_gl_handle != 0 glDeleteVertexArrays(1, *outline_vao_gl_handle);
+    if outline_vao_gl_handle != 0 gl_delete_vertex_array(outline_vao_gl_handle);
     deinit(*outline_renderer);
     deinit(*selected_depth_renderer);
 
-    if selected_depth_texture_gl_handle != 0 glDeleteTextures(1, *selected_depth_texture_gl_handle);
-    if scene_depth_texture_gl_handle != 0 glDeleteTextures(1, *scene_depth_texture_gl_handle);
-    if selected_depth_framebuffer_gl_handle != 0 glDeleteFramebuffers(1, *selected_depth_framebuffer_gl_handle);
-    if scene_depth_framebuffer_gl_handle != 0 glDeleteFramebuffers(1, *scene_depth_framebuffer_gl_handle);
+    if selected_depth_texture_gl_handle != 0 gl_delete_texture(selected_depth_texture_gl_handle);
+    if scene_depth_texture_gl_handle != 0 gl_delete_texture(scene_depth_texture_gl_handle);
+    if selected_depth_framebuffer_gl_handle != 0 gl_delete_framebuffer(selected_depth_framebuffer_gl_handle);
+    if scene_depth_framebuffer_gl_handle != 0 gl_delete_framebuffer(scene_depth_framebuffer_gl_handle);
     picker.* = .{};
 }
 
@@ -659,16 +659,18 @@ prepare_selection_outline :: (
         return false;
     }
 
+    previous_viewport: [4] GLint;
+    glGetIntegerv(GL_VIEWPORT, previous_viewport.data);
     glViewport(0, 0, width, height);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
 
-    glUseProgram(selected_depth_renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(selected_depth_renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*selected_depth_renderer, world_to_camera);
     set_camera_to_clip_uniform(*selected_depth_renderer, camera_to_clip);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
 
     /*
     render both depth textures through the same position-only shader. This
@@ -676,12 +678,12 @@ prepare_selection_outline :: (
     the ordinary material shader's matrix evaluation cannot create false
     x-ray segments at grazing angles.
     */
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_depth_framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_DRAW_FRAMEBUFFER, scene_depth_framebuffer_gl_handle);
     glClear(GL_DEPTH_BUFFER_BIT);
     for pickable: pickables queue_render(*selected_depth_renderer, pickable.mesh);
     render(*selected_depth_renderer, GL_TRIANGLES);
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, selected_depth_framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_DRAW_FRAMEBUFFER, selected_depth_framebuffer_gl_handle);
     glClear(GL_DEPTH_BUFFER_BIT);
     selected_pickable_count: s64;
     for pickable: pickables {
@@ -690,13 +692,24 @@ prepare_selection_outline :: (
         selected_pickable_count += 1;
     }
     if selected_pickable_count == 0 {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        gl_bind_framebuffer_to_binding_target(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(
+            previous_viewport[0],
+            previous_viewport[1],
+            cast(GLsizei) previous_viewport[2],
+            cast(GLsizei) previous_viewport[3],
+        );
         return false;
     }
     render(*selected_depth_renderer, GL_TRIANGLES);
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glViewport(0, 0, width, height);
+    gl_bind_framebuffer_to_binding_target(GL_DRAW_FRAMEBUFFER, 0);
+    glViewport(
+        previous_viewport[0],
+        previous_viewport[1],
+        cast(GLsizei) previous_viewport[2],
+        cast(GLsizei) previous_viewport[3],
+    );
     return true;
 }
 
@@ -707,6 +720,7 @@ draw_selection_outline :: (
     thickness_px: u32 = 3,
     occluded_alpha: float32 = 0.32,
     depth_epsilon: float32 = 3.0 / 8388608.0,
+    viewport_origin: Vector2 = .{},
 ) {
     if !selected_depth_framebuffer_complete || !has_selection return;
 
@@ -714,28 +728,29 @@ draw_selection_outline :: (
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(outline_renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(outline_renderer.shader_program_gl_handle);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
+    gl_set_active_texture_unit(GL_TEXTURE0);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, selected_depth_texture_gl_handle);
     set_selected_depth_texture_uniform(*outline_renderer, 0);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
+    gl_set_active_texture_unit(GL_TEXTURE1);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, scene_depth_texture_gl_handle);
     set_scene_depth_texture_uniform(*outline_renderer, 1);
     set_rgba_color_uniform(*outline_renderer, color);
     set_thickness_px_uniform(*outline_renderer, thickness_px);
     set_occluded_alpha_uniform(*outline_renderer, occluded_alpha);
     set_depth_epsilon_uniform(*outline_renderer, depth_epsilon);
+    set_viewport_origin_uniform(*outline_renderer, viewport_origin);
 
-    glBindVertexArray(outline_vao_gl_handle);
+    gl_bind_vertex_array(outline_vao_gl_handle);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
+    gl_bind_vertex_array(0);
 
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glUseProgram(0);
+    gl_set_active_texture_unit(GL_TEXTURE1);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, 0);
+    gl_set_active_texture_unit(GL_TEXTURE0);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, 0);
+    gl_clear_active_shader_program();
     glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
 }

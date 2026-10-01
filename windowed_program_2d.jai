@@ -104,7 +104,7 @@ per_frame_update :: (using wp2 : *Windowed_Program_2D) {
     }
 
     // set orthographic projection uniforms on the renderer
-    glUseProgram(camera_per_object_transform_color_renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(camera_per_object_transform_color_renderer.shader_program_gl_handle);
 
     world_to_camera := Matrix4_Identity;
     set_world_to_camera_uniform(*camera_per_object_transform_color_renderer, world_to_camera);

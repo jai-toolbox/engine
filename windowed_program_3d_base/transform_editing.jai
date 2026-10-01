@@ -278,6 +278,8 @@ update_windowed_program_3d_transform_operation :: (
 
 render_windowed_program_3d_transform_operation_status :: (
     using base3d: *Windowed_Program_3D_Base,
+    viewport_left: float32 = 0,
+    viewport_bottom: float32 = -1,
 ) {
     if transform_operation.type == .NONE || ui_ctx == null return;
 
@@ -294,6 +296,7 @@ render_windowed_program_3d_transform_operation_status :: (
         axis_name,
         transform_operation.targets.count,
     );
-    ui_cmd_rect(.{12, ui_ctx.window_h - 39, 660, 28}, .{0.035, 0.045, 0.065, 0.86});
-    ui_cmd_text(status, 20, ui_ctx.window_h - 20, 13, .{0.92, 0.94, 0.98, 1});
+    bottom_edge := ifx viewport_bottom >= 0 then viewport_bottom else ui_ctx.window_h;
+    ui_cmd_rect(.{viewport_left + 12, bottom_edge - 39, 660, 28}, .{0.035, 0.045, 0.065, 0.86});
+    ui_cmd_text(status, viewport_left + 20, bottom_edge - 20, 13, .{0.92, 0.94, 0.98, 1});
 }

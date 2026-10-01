@@ -110,7 +110,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows
     apply_windowed_program_3d_editor_transform(program, *base_3d);
     world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
 
-    glUseProgram(renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
     set_camera_to_clip_uniform(*renderer, camera_to_clip);
     set_world_to_light_clip_uniform(*renderer, world_to_light_clip);
@@ -125,7 +125,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows
     set_packed_textures_uniform(*renderer, 0);
     set_packed_texture_bounding_boxes_uniform(*renderer, 1);
     set_pbr_material_table_uniform(*renderer, 2);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
 }
 
 render_shadow_map :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows) {
@@ -133,15 +133,15 @@ render_shadow_map :: (using program: *Windowed_Program_3D_PBR_Directional_Shadow
     world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
 
     glViewport(0, 0, WINDOWED_PROGRAM_3D_EXAMPLE_SHADOW_MAP_SIZE, WINDOWED_PROGRAM_3D_EXAMPLE_SHADOW_MAP_SIZE);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadow_map.framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, shadow_map.framebuffer_gl_handle);
     glClear(GL_DEPTH_BUFFER_BIT);
-    glUseProgram(depth_renderer.shader_program_gl_handle);
+    gl_set_active_shader_program(depth_renderer.shader_program_gl_handle);
     set_world_to_light_clip_uniform(*depth_renderer, world_to_light_clip);
-    glUseProgram(0);
+    gl_clear_active_shader_program();
     for renderable: renderables queue_render(*depth_renderer, renderable.depth);
     render(*depth_renderer);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK);
     glReadBuffer(GL_BACK);
     glViewport(0, 0, cast(u32) window_width, cast(u32) window_height);
@@ -151,9 +151,9 @@ render_scene :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows) {
     begin_windowed_program_3d_example_render(*base_3d, clear_color);
     render_shadow_map(program);
     bind_windowed_program_3d_example_material_textures(material_textures);
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
-    glActiveTexture(GL_TEXTURE0);
+    gl_set_active_texture_unit(GL_TEXTURE3);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
+    gl_set_active_texture_unit(GL_TEXTURE0);
     for renderable: renderables queue_render(*renderer, renderable.shaded);
     begin_windowed_program_3d_geometry_render(*base_3d);
     render(*renderer);

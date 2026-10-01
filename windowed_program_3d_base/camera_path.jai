@@ -417,12 +417,17 @@ update_windowed_program_3d_camera_path_editor :: (
 
 render_windowed_program_3d_camera_path :: (
     using base3d: *Windowed_Program_3D_Base,
+    viewport_left: float32 = 0,
+    viewport_top: float32 = 0,
+    viewport_width: float32 = -1,
+    viewport_height: float32 = -1,
 ) {
     if !camera_path_editor_enabled || !camera_path.visible || ui_ctx == null ||
        camera_path.keyframes.count == 0 return;
 
-    width := cast(float32) ui_ctx.window_w;
-    height := cast(float32) ui_ctx.window_h;
+    width := ifx viewport_width > 0 then viewport_width else cast(float32) ui_ctx.window_w;
+    height := ifx viewport_height > 0 then viewport_height else cast(float32) ui_ctx.window_h;
+    viewport_offset := Vector2.{viewport_left, viewport_top};
     if camera_path.keyframes.count >= 2 {
         samples_per_segment := max(camera_path.preview_samples_per_segment, cast(s32) 2);
         previous_screen, previous_visible := windowed_program_3d_camera_path_project_to_ui(
@@ -432,6 +437,7 @@ render_windowed_program_3d_camera_path :: (
             width,
             height,
         );
+        previous_screen += viewport_offset;
         for segment_index: 0..camera_path.keyframes.count - 2 {
             for sample_index: 1..samples_per_segment {
                 amount := cast(float32) sample_index / cast(float32) samples_per_segment;
@@ -447,6 +453,7 @@ render_windowed_program_3d_camera_path :: (
                     width,
                     height,
                 );
+                screen += viewport_offset;
                 if previous_visible && visible {
                     windowed_program_3d_draw_screen_line(
                         previous_screen,
@@ -469,6 +476,7 @@ render_windowed_program_3d_camera_path :: (
             width,
             height,
         );
+        screen += viewport_offset;
         if !visible continue;
 
         selected := keyframe_index == camera_path.selected_index;
@@ -490,6 +498,7 @@ render_windowed_program_3d_camera_path :: (
             width,
             height,
         );
+        orientation_screen += viewport_offset;
         if orientation_visible {
             windowed_program_3d_draw_screen_line(
                 screen,
@@ -516,6 +525,11 @@ render_windowed_program_3d_camera_path :: (
         camera_path.keyframes.count,
         selected_display,
     );
-    ui_cmd_rect(.{12, 12, min(ui_ctx.window_w - 24.0, 990.0), 28}, .{0.035, 0.045, 0.065, 0.88});
-    ui_cmd_text(status, 20, 31, 12, .{0.92, 0.95, 1.0, 1});
+    ui_cmd_rect(.{
+        viewport_left + 12,
+        viewport_top + 12,
+        min(width - 24.0, 990.0),
+        28,
+    }, .{0.035, 0.045, 0.065, 0.88});
+    ui_cmd_text(status, viewport_left + 20, viewport_top + 31, 12, .{0.92, 0.95, 1.0, 1});
 }

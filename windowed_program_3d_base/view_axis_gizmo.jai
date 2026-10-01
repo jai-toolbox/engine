@@ -99,11 +99,12 @@ render_windowed_program_3d_view_axis_gizmo :: (
     world_to_camera: Matrix4,
     orthographic_projection: bool,
     viewport_right_px: float32 = -1,
+    viewport_top_px: float32 = 0,
 ) {
     if ui_ctx == null return;
 
     right_edge := ifx viewport_right_px >= 0 then viewport_right_px else ui_ctx.window_w;
-    center := Vector2.{right_edge - 72.0, 72.0};
+    center := Vector2.{right_edge - 72.0, viewport_top_px + 72.0};
     axis_radius: float32 = 39.0;
 
     windowed_program_3d_draw_screen_circle(

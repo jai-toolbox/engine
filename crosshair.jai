@@ -235,7 +235,11 @@ validate_crosshair_geometry :: (itp: *Indexed_Triangle_Positions) -> bool, strin
     return true, "";
 }
 
-render_crosshair :: (wp: *Windowed_Program) {
+render_crosshair :: (
+    wp: *Windowed_Program,
+    render_width: s32 = -1,
+    render_height: s32 = -1,
+) {
     if !wp.crosshair_settings.enabled return;
     if !wp.crosshair_file.loaded {
         if !wp.crosshair_file.warned_missing {
@@ -246,10 +250,12 @@ render_crosshair :: (wp: *Windowed_Program) {
     }
 
     monitor := crosshair_monitor_scale_or_fallback(wp.crosshair_monitor);
+    width := ifx render_width > 0 then render_width else wp.window_width;
+    height := ifx render_height > 0 then render_height else wp.window_height;
     rendered := make_crosshair_render_geometry(wp.crosshair_file.geometry,
                                                 wp.crosshair_settings.color,
-                                                cast(float32) wp.window_width,
-                                                cast(float32) wp.window_height,
+                                                cast(float32) width,
+                                                cast(float32) height,
                                                 monitor);
     defer deinit(*rendered);
 

@@ -151,13 +151,13 @@ Windowed_Program_3D_Example_Material_Textures :: struct {
 bind_windowed_program_3d_example_material_textures :: (
     textures: Windowed_Program_3D_Example_Material_Textures,
 ) {
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, textures.packed_texture_array_gl_id);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_1D, textures.packed_texture_bounds_gl_id);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_1D, textures.material_table_gl_id);
-    glActiveTexture(GL_TEXTURE0);
+    gl_set_active_texture_unit(GL_TEXTURE0);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D_ARRAY, textures.packed_texture_array_gl_id);
+    gl_set_active_texture_unit(GL_TEXTURE1);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_1D, textures.packed_texture_bounds_gl_id);
+    gl_set_active_texture_unit(GL_TEXTURE2);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_1D, textures.material_table_gl_id);
+    gl_set_active_texture_unit(GL_TEXTURE0);
 }
 
 WINDOWED_PROGRAM_3D_EXAMPLE_SHADOW_MAP_SIZE :: 1024;
@@ -171,7 +171,7 @@ Windowed_Program_3D_Example_Shadow_Map :: struct {
 init :: (shadow_map: *Windowed_Program_3D_Example_Shadow_Map) {
     glGenFramebuffers(1, *shadow_map.framebuffer_gl_handle);
     glGenTextures(1, *shadow_map.depth_texture_gl_handle);
-    glBindTexture(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
+    gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
@@ -190,7 +190,7 @@ init :: (shadow_map: *Windowed_Program_3D_Example_Shadow_Map) {
     border_color := float32.[1, 1, 1, 1];
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color.data);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, shadow_map.framebuffer_gl_handle);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, shadow_map.framebuffer_gl_handle);
     glFramebufferTexture2D(
         GL_FRAMEBUFFER,
         GL_DEPTH_ATTACHMENT,
@@ -202,12 +202,12 @@ init :: (shadow_map: *Windowed_Program_3D_Example_Shadow_Map) {
     glReadBuffer(GL_NONE);
     shadow_map.initialized = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     if !shadow_map.initialized log_error("Windowed_Program_3D example shadow framebuffer is incomplete");
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_bind_framebuffer_to_binding_target(GL_FRAMEBUFFER, 0);
 }
 
 deinit :: (shadow_map: *Windowed_Program_3D_Example_Shadow_Map) {
-    if shadow_map.framebuffer_gl_handle != 0 glDeleteFramebuffers(1, *shadow_map.framebuffer_gl_handle);
-    if shadow_map.depth_texture_gl_handle != 0 glDeleteTextures(1, *shadow_map.depth_texture_gl_handle);
+    if shadow_map.framebuffer_gl_handle != 0 gl_delete_framebuffer(shadow_map.framebuffer_gl_handle);
+    if shadow_map.depth_texture_gl_handle != 0 gl_delete_texture(shadow_map.depth_texture_gl_handle);
     shadow_map.* = .{};
 }
 
@@ -261,32 +261,32 @@ Windowed_Program_3D_Example_Bone_Buffer :: struct {
 init :: (buffer: *Windowed_Program_3D_Example_Bone_Buffer) {
     for *matrix: buffer.matrices matrix.* = Matrix4_Identity;
     glGenBuffers(1, *buffer.gl_uniform_buffer_handle);
-    glBindBuffer(GL_UNIFORM_BUFFER, buffer.gl_uniform_buffer_handle);
+    gl_bind_buffer_to_binding_target(GL_UNIFORM_BUFFER, buffer.gl_uniform_buffer_handle);
     glBufferData(
         GL_UNIFORM_BUFFER,
         WINDOWED_PROGRAM_3D_EXAMPLE_MAX_BONES * size_of(Matrix4),
         buffer.matrices.data,
         GL_DYNAMIC_DRAW,
     );
-    glBindBufferBase(GL_UNIFORM_BUFFER, WINDOWED_PROGRAM_3D_EXAMPLE_BONE_UBO_BINDING, buffer.gl_uniform_buffer_handle);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    gl_bind_buffer_to_indexed_binding_point_of_binding_target(GL_UNIFORM_BUFFER, WINDOWED_PROGRAM_3D_EXAMPLE_BONE_UBO_BINDING, buffer.gl_uniform_buffer_handle);
+    gl_bind_buffer_to_binding_target(GL_UNIFORM_BUFFER, 0);
 }
 
 deinit :: (buffer: *Windowed_Program_3D_Example_Bone_Buffer) {
-    if buffer.gl_uniform_buffer_handle != 0 glDeleteBuffers(1, *buffer.gl_uniform_buffer_handle);
+    if buffer.gl_uniform_buffer_handle != 0 gl_delete_buffer(buffer.gl_uniform_buffer_handle);
     buffer.* = .{};
 }
 
 upload :: (buffer: *Windowed_Program_3D_Example_Bone_Buffer) {
-    glBindBuffer(GL_UNIFORM_BUFFER, buffer.gl_uniform_buffer_handle);
+    gl_bind_buffer_to_binding_target(GL_UNIFORM_BUFFER, buffer.gl_uniform_buffer_handle);
     glBufferSubData(
         GL_UNIFORM_BUFFER,
         0,
         WINDOWED_PROGRAM_3D_EXAMPLE_MAX_BONES * size_of(Matrix4),
         buffer.matrices.data,
     );
-    glBindBufferBase(GL_UNIFORM_BUFFER, WINDOWED_PROGRAM_3D_EXAMPLE_BONE_UBO_BINDING, buffer.gl_uniform_buffer_handle);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    gl_bind_buffer_to_indexed_binding_point_of_binding_target(GL_UNIFORM_BUFFER, WINDOWED_PROGRAM_3D_EXAMPLE_BONE_UBO_BINDING, buffer.gl_uniform_buffer_handle);
+    gl_bind_buffer_to_binding_target(GL_UNIFORM_BUFFER, 0);
 }
 
 bind_windowed_program_3d_example_bone_block :: (shader_program_gl_handle: GLuint) {
