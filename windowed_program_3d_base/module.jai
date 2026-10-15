@@ -15,12 +15,12 @@
 #import "tbx/math";
 #import "tbx/ui";
 #import "tbx/assets";
+#import "tbx/packaging";
 #import "tbx/model_loading";
 #import "tbx/software_rasterizer";
 #import "tbx/engine/monitor";
 
 #load "../../movement/god_mode.jai";
-#load "../build_type.jai";
 #load "../input.jai";
 #load "../looping_program.jai";
 #load "../crosshair_editor_model.jai";

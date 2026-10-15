@@ -31,6 +31,7 @@ Network :: #import "tbx/network";
 #import "tbx/math";
 #import "tbx/ui";
 #import "tbx/assets";
+#import "tbx/packaging";
 #import "tbx/model_loading";
 #import "tbx/software_rasterizer";
 #import "tbx/engine/monitor";
@@ -39,7 +40,6 @@ Network :: #import "tbx/network";
 #import "File_Utilities";
 
 // ordering matters.
-#load "build_type.jai";
 #load "input.jai";
 #load "looping_program.jai";
 #load "crosshair_editor_model.jai";

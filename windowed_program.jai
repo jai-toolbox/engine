@@ -68,7 +68,7 @@ Windowed_Program :: struct {
 
 init :: (using wp: *Windowed_Program) {
     init(*lp);
-    init_assets_for_build_type(wp);
+    init_assets_for_build_type();
 
     window = Window_Creation.create_window(window_width, window_height, window_name);
     Simp.set_render_target(window);
@@ -77,7 +77,7 @@ init :: (using wp: *Windowed_Program) {
 
     // The widget/layout core produces draw data. This program selects the
     // OpenGL renderer backend to consume it.
-    font_directory := ifx file_exists("data/fonts/pt_serif/atlas.json") then
+    font_directory := ifx asset_exists("data/fonts/pt_serif/atlas.json") then
                       "data/fonts/pt_serif" else "data/fonts/pt_sans";
     ui_font = load_msdf_font_metrics(tprint("%/atlas.json", font_directory));
     if !init(*ui_renderer, *ui_font, tprint("%/atlas.png", font_directory)) return;
@@ -137,21 +137,6 @@ deinit :: (using wp: *Windowed_Program) {
 
     deinit_assets();
 }
-
-init_assets_for_build_type :: (using wp: *Windowed_Program) {
-    if assets_initialized return;
-
-    DATA_DIRECTORY :: "data";
-    DATA_PACKAGE   :: "data.package";
-
-    #if BUILD_TYPE == .DEVELOPMENT {
-        init_from_loose_files(DATA_DIRECTORY);
-    } else #if BUILD_TYPE == .DISTRIBUTION {
-        package_loaded := init_from_package(DATA_PACKAGE);
-        assert(package_loaded, "Distribution build could not load data.package.");
-    }
-}
-
 
 sleep_to_maintain_max_fps :: (using wp: *Windowed_Program) {
     if vsync return;
