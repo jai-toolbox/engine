@@ -930,6 +930,13 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
 
                 update_angles_with_deltas(*camera, dx, dy);
                 keep_mouse_in_center_of_screen(*wp);
+            } else #if OS == .MACOS {
+                /*
+                nsevent deltas use the same screen-space y convention as the
+                windows input path. They remain available while CoreGraphics
+                disassociates the cursor, which provides unlimited mouse look.
+                */
+                update_angles_with_deltas(*camera, Input.mouse_delta_x, Input.mouse_delta_y);
             } else {
                 x, y, success := Window_Creation.get_mouse_pointer_position(window, right_handed_mouse_position);
                 if success update_angles(*camera, x, y);

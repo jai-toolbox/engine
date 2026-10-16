@@ -3,6 +3,12 @@ Window_Creation :: #import "Window_Creation";
 Sound_Player :: #import "Sound_Player";
 Input :: #import "Input";
 Simp :: #import "Simp";
+
+#if OS == .MACOS {
+    Mac_AppKit :: #import "Objective_C/AppKit";
+    Mac_CoreGraphics :: #library,system "CoreGraphics";
+    CGAssociateMouseAndMouseCursorPosition :: (connected: u32) -> s32 #foreign Mac_CoreGraphics;
+}
 #scope_export
 
 Engine_Sound_Type :: enum u8 {
@@ -114,6 +120,8 @@ init :: (using wp: *Windowed_Program) {
 }
 
 deinit :: (using wp: *Windowed_Program) {
+
+    show_cursor(wp);
 
     #if OS == .LINUX stop_linux_sound_mixer();
     Sound_Player.sound_player_shutdown();
@@ -508,6 +516,11 @@ keep_mouse_in_center_of_screen :: (using wp: *Windowed_Program) {
         X11 :: #import "X11";
         X11.XWarpPointer(X11.x_global_display, X11.None, window, 0, 0, 0, 0, w / 2, h / 2);
         X11.XFlush(X11.x_global_display);
+    } else #if OS == .MACOS {
+        /*
+        macos camera look uses NSEvent relative deltas while the cursor is
+        disassociated, so no pointer warp is required here.
+        */
     }
 }
 
@@ -522,6 +535,9 @@ show_cursor :: (using wp: *Windowed_Program) {
             X11.XUngrabPointer(X11.x_global_display, X11.CurrentTime);
             X11.XUndefineCursor(X11.x_global_display, window);
             X11.XFlush(X11.x_global_display);
+        } else #if OS == .MACOS {
+            CGAssociateMouseAndMouseCursorPosition(1);
+            Mac_AppKit.NSCursor.unhide();
         }
     }
 }
@@ -547,6 +563,9 @@ hide_cursor :: (using wp: *Windowed_Program) {
                 X11.CurrentTime
             );
             X11.XFlush(X11.x_global_display);
+        } else #if OS == .MACOS {
+            CGAssociateMouseAndMouseCursorPosition(0);
+            Mac_AppKit.NSCursor.hide();
         }
     }
 }
