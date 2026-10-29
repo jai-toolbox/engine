@@ -97,6 +97,9 @@ windowed_program_3d_draw_view_axis_arm :: (
 
 render_windowed_program_3d_view_axis_gizmo :: (
     world_to_camera: Matrix4,
+    camera_position: Vector3,
+    camera_yaw_turns: float,
+    camera_pitch_turns: float,
     orthographic_projection: bool,
     viewport_right_px: float32 = -1,
     viewport_top_px: float32 = 0,
@@ -200,13 +203,49 @@ render_windowed_program_3d_view_axis_gizmo :: (
         );
     }
 
+    text_y := center.y + axis_radius + 25.0;
     if orthographic_projection {
         ui_cmd_text(
             "ORTHO",
             center.x - 21.0,
-            center.y + axis_radius + 25.0,
+            text_y,
             11.0,
             .{0.78, 0.83, 0.90, 1},
         );
+        text_y += 15.0;
     }
+
+    position_text := tprint(
+        "Position (%, %, %)",
+        FormatFloat.{value=camera_position.x, trailing_width=2, zero_removal=.NO},
+        FormatFloat.{value=camera_position.y, trailing_width=2, zero_removal=.NO},
+        FormatFloat.{value=camera_position.z, trailing_width=2, zero_removal=.NO},
+    );
+    position_text_width := msdf_measure_text_pixels(ui_ctx.font, position_text, 11.0);
+    ui_cmd_text(
+        position_text,
+        center.x - position_text_width * 0.5,
+        text_y,
+        11.0,
+        .{0.78, 0.83, 0.90, 1},
+    );
+
+    text_y += 15.0;
+    orientation_text := tprint(
+        "Yaw %  Pitch % (turns)",
+        FormatFloat.{value=camera_yaw_turns, trailing_width=3, zero_removal=.NO},
+        FormatFloat.{value=camera_pitch_turns, trailing_width=3, zero_removal=.NO},
+    );
+    orientation_text_width := msdf_measure_text_pixels(
+        ui_ctx.font,
+        orientation_text,
+        11.0,
+    );
+    ui_cmd_text(
+        orientation_text,
+        center.x - orientation_text_width * 0.5,
+        text_y,
+        11.0,
+        .{0.78, 0.83, 0.90, 1},
+    );
 }

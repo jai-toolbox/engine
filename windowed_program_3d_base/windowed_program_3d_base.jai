@@ -689,6 +689,9 @@ render_windowed_program_3d_editor_overlays :: (using wp3b: *Windowed_Program_3D_
     if show_view_axis_gizmo {
         render_windowed_program_3d_view_axis_gizmo(
             world_to_camera,
+            camera.position,
+            camera.yaw,
+            camera.pitch,
             orthographic_projection_active,
             viewport_right,
             viewport_top,
