@@ -377,6 +377,10 @@ ui_end :: (using wp: *Windowed_Program) {
     render_ui_draw_data_with_opengl(*ui_renderer, *ui_context);
 }
 
+present :: (using wp: *Windowed_Program) {
+    Simp.swap_buffers(window, false);
+}
+
 set_fullscreen :: (using wp: *Windowed_Program, enabled : bool) {
     if fullscreen == enabled return;
 

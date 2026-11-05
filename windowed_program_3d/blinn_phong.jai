@@ -57,14 +57,14 @@ set_renderable_transform :: (
 }
 
 get_selected_renderable :: (using program: *Windowed_Program_3D_Blinn_Phong) -> *Gpu_Style_Blinn_Phong_Renderable {
-    index := windowed_program_3d_selected_renderable_index(*base_3d);
+    index := get_selected_renderable_index(*base_3d);
     if index < 0 || index >= renderables.count return null;
     return *renderables[index];
 }
 
 per_frame_update :: (using program: *Windowed_Program_3D_Blinn_Phong) {
     per_frame_update(*base_3d);
-    apply_windowed_program_3d_editor_transform(program, *base_3d);
+    apply_editor_transform(program, *base_3d);
 
     gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
@@ -83,15 +83,15 @@ per_frame_update :: (using program: *Windowed_Program_3D_Blinn_Phong) {
 }
 
 render_scene :: (using program: *Windowed_Program_3D_Blinn_Phong) {
-    begin_windowed_program_3d_example_render(*base_3d, clear_color);
-    bind_windowed_program_3d_example_material_textures(material_textures);
+    begin_example_render(*base_3d, clear_color);
+    bind_example_material_textures(material_textures);
     for renderable: renderables queue_render(*renderer, renderable);
-    begin_windowed_program_3d_geometry_render(*base_3d);
+    begin_geometry_render(*base_3d);
     render(*renderer);
-    end_windowed_program_3d_geometry_render(*base_3d);
-    end_windowed_program_3d_example_render(*base_3d);
+    end_geometry_render(*base_3d);
+    end_example_render(*base_3d);
 }
 
 run :: (using program: *Windowed_Program_3D_Blinn_Phong) {
-    while !end_program run_windowed_program_3d_example_frame(program, *base_3d);
+    while !end_program run_example_frame(program, *base_3d);
 }

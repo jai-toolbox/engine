@@ -35,4 +35,5 @@
 #load "transform_editing.jai";
 #load "view_axis_gizmo.jai";
 #load "camera_path.jai";
+#load "camera_modes.jai";
 #load "windowed_program_3d_base.jai";

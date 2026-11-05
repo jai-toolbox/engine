@@ -16,7 +16,7 @@ Windowed_Program_3D_View_Axis_Arm :: struct {
     show_label: bool;
 }
 
-windowed_program_3d_draw_screen_line :: (
+draw_screen_line :: (
     start_pixels: Vector2,
     end_pixels: Vector2,
     thickness_pixels: float32,
@@ -40,7 +40,7 @@ windowed_program_3d_draw_screen_line :: (
     ui_cmd_geometry(positions, colors, indices);
 }
 
-windowed_program_3d_draw_screen_circle :: (
+draw_screen_circle :: (
     center_pixels: Vector2,
     radius_pixels: float32,
     color: Vector4,
@@ -65,19 +65,19 @@ windowed_program_3d_draw_screen_circle :: (
     ui_cmd_geometry(positions, colors, indices);
 }
 
-windowed_program_3d_draw_view_axis_arm :: (
+draw_view_axis_arm :: (
     center: Vector2,
     axis_radius: float32,
     arm: Windowed_Program_3D_View_Axis_Arm,
 ) {
     endpoint := center + arm.screen_direction * axis_radius;
-    windowed_program_3d_draw_screen_line(
+    draw_screen_line(
         center,
         endpoint,
         arm.line_thickness,
         arm.color,
     );
-    windowed_program_3d_draw_screen_circle(
+    draw_screen_circle(
         endpoint,
         arm.endpoint_radius,
         arm.color,
@@ -95,7 +95,7 @@ windowed_program_3d_draw_view_axis_arm :: (
     }
 }
 
-render_windowed_program_3d_view_axis_gizmo :: (
+render_view_axis_gizmo :: (
     world_to_camera: Matrix4,
     camera_position: Vector3,
     camera_yaw_turns: float,
@@ -110,7 +110,7 @@ render_windowed_program_3d_view_axis_gizmo :: (
     center := Vector2.{right_edge - 72.0, viewport_top_px + 72.0};
     axis_radius: float32 = 39.0;
 
-    windowed_program_3d_draw_screen_circle(
+    draw_screen_circle(
         center,
         axis_radius + 14.0,
         .{0.035, 0.045, 0.065, 0.72},
@@ -184,7 +184,7 @@ render_windowed_program_3d_view_axis_gizmo :: (
     hub_drawn := false;
     for arm: arms {
         if !hub_drawn && arm.view_depth >= 0 {
-            windowed_program_3d_draw_screen_circle(
+            draw_screen_circle(
                 center,
                 3.0,
                 .{0.82, 0.85, 0.90, 1},
@@ -192,10 +192,10 @@ render_windowed_program_3d_view_axis_gizmo :: (
             );
             hub_drawn = true;
         }
-        windowed_program_3d_draw_view_axis_arm(center, axis_radius, arm);
+        draw_view_axis_arm(center, axis_radius, arm);
     }
     if !hub_drawn {
-        windowed_program_3d_draw_screen_circle(
+        draw_screen_circle(
             center,
             3.0,
             .{0.82, 0.85, 0.90, 1},
@@ -222,9 +222,11 @@ render_windowed_program_3d_view_axis_gizmo :: (
         FormatFloat.{value=camera_position.z, trailing_width=2, zero_removal=.NO},
     );
     position_text_width := msdf_measure_text_pixels(ui_ctx.font, position_text, 11.0);
+    // Keep labels inside the viewport when they extend beyond the gizmo.
+    text_right := right_edge - 12.0;
     ui_cmd_text(
         position_text,
-        center.x - position_text_width * 0.5,
+        min(center.x - position_text_width * 0.5, text_right - position_text_width),
         text_y,
         11.0,
         .{0.78, 0.83, 0.90, 1},
@@ -243,7 +245,7 @@ render_windowed_program_3d_view_axis_gizmo :: (
     );
     ui_cmd_text(
         orientation_text,
-        center.x - orientation_text_width * 0.5,
+        min(center.x - orientation_text_width * 0.5, text_right - orientation_text_width),
         text_y,
         11.0,
         .{0.78, 0.83, 0.90, 1},

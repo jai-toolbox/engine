@@ -13,7 +13,7 @@ Windowed_Program_3D_Example_Clear_Color :: struct {
     a: float32 = 1.0;
 }
 
-begin_windowed_program_3d_example_render :: (
+begin_example_render :: (
     base: *Windowed_Program_3D_Base,
     clear_color: Windowed_Program_3D_Example_Clear_Color,
 ) {
@@ -26,8 +26,8 @@ begin_windowed_program_3d_example_render :: (
     glClear(GL_DEPTH_BUFFER_BIT);
 }
 
-end_windowed_program_3d_example_render :: (base: *Windowed_Program_3D_Base) {
-    render_windowed_program_3d_editor_overlays(base);
+end_example_render :: (base: *Windowed_Program_3D_Base) {
+    render_editor_overlays(base);
     if base.current_menu == .NONE {
         if base.camera_look_active render_crosshair(*base.wp.base);
     } else {
@@ -35,10 +35,10 @@ end_windowed_program_3d_example_render :: (base: *Windowed_Program_3D_Base) {
     }
     ui_end(*base.wp);
     drain_ui_audio_events(*base.wp);
-    Simp.swap_buffers(base.window, false);
+    present(base);
 }
 
-run_windowed_program_3d_example_frame :: (
+run_example_frame :: (
     program: *$Program,
     base: *Windowed_Program_3D_Base,
 ) {
@@ -48,7 +48,7 @@ run_windowed_program_3d_example_frame :: (
     end_frame(base);
 }
 
-apply_windowed_program_3d_editor_transform :: (
+apply_editor_transform :: (
     program: *$Program,
     base: *Windowed_Program_3D_Base,
 ) {
@@ -82,7 +82,7 @@ set_renderable_editor_permissions :: (
     object_id: u32,
     editor_permissions: Windowed_Program_3D_Editor_Permissions,
 ) -> bool {
-    return set_windowed_program_3d_editor_permissions(
+    return set_editor_permissions(
         *program.base_3d,
         object_id,
         editor_permissions,
@@ -93,7 +93,7 @@ get_renderable_editor_permissions :: (
     program: *$Program,
     object_id: u32,
 ) -> (permissions: Windowed_Program_3D_Editor_Permissions, found: bool) {
-    permissions, found := get_windowed_program_3d_editor_permissions(
+    permissions, found := get_editor_permissions(
         *program.base_3d,
         object_id,
     );
@@ -124,15 +124,6 @@ set_renderable_transformable :: (
     return set_renderable_editor_permissions(program, object_id, permissions);
 }
 
-begin_frame :: (base: *Windowed_Program_3D_Base) {
-    mark_frame_start(base);
-}
-
-end_frame :: (base: *Windowed_Program_3D_Base) {
-    sleep_to_maintain_max_fps(base);
-    mark_frame_end(base);
-}
-
 Windowed_Program_3D_Example_PBR_Lighting :: struct {
     ambient_strength: float32 = 0.03;
     direction: Vector3 = .{-0.35, -0.8, -0.45};
@@ -148,7 +139,7 @@ Windowed_Program_3D_Example_Material_Textures :: struct {
     material_table_gl_id: GLuint;                // texture unit 2, GL_TEXTURE_1D
 }
 
-bind_windowed_program_3d_example_material_textures :: (
+bind_example_material_textures :: (
     textures: Windowed_Program_3D_Example_Material_Textures,
 ) {
     gl_set_active_texture_unit(GL_TEXTURE0);
@@ -211,7 +202,7 @@ deinit :: (shadow_map: *Windowed_Program_3D_Example_Shadow_Map) {
     shadow_map.* = .{};
 }
 
-windowed_program_3d_example_light_clip_matrix :: (
+example_light_clip_matrix :: (
     direction: Vector3,
     center: Vector3,
     half_extent: float32,
@@ -289,7 +280,7 @@ upload :: (buffer: *Windowed_Program_3D_Example_Bone_Buffer) {
     gl_bind_buffer_to_binding_target(GL_UNIFORM_BUFFER, 0);
 }
 
-bind_windowed_program_3d_example_bone_block :: (shader_program_gl_handle: GLuint) {
+bind_example_bone_block :: (shader_program_gl_handle: GLuint) {
     block_index := glGetUniformBlockIndex(shader_program_gl_handle, temp_c_string("BoneAnimationTransforms"));
     if block_index != GL_INVALID_INDEX {
         glUniformBlockBinding(

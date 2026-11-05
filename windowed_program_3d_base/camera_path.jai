@@ -32,7 +32,7 @@ Windowed_Program_3D_Camera_Path :: struct {
     changed_this_frame: bool;
 }
 
-windowed_program_3d_camera_keyframe_from_camera :: (
+camera_keyframe_from_camera :: (
     camera: *Camera,
 ) -> Windowed_Program_3D_Camera_Keyframe {
     return .{
@@ -42,7 +42,7 @@ windowed_program_3d_camera_keyframe_from_camera :: (
     };
 }
 
-windowed_program_3d_camera_path_shortest_turn_delta :: (
+camera_path_shortest_turn_delta :: (
     start: float32,
     end: float32,
 ) -> float32 {
@@ -50,7 +50,7 @@ windowed_program_3d_camera_path_shortest_turn_delta :: (
     return delta - floor(delta + 0.5);
 }
 
-windowed_program_3d_camera_path_catmull_rom_position :: (
+camera_path_catmull_rom_position :: (
     p0: Vector3,
     p1: Vector3,
     p2: Vector3,
@@ -83,7 +83,7 @@ windowed_program_3d_camera_path_catmull_rom_position :: (
         + b2 * ((t - t1) / (t2 - t1));
 }
 
-windowed_program_3d_camera_path_catmull_rom_scalar :: (
+camera_path_catmull_rom_scalar :: (
     v0: float32,
     v1: float32,
     v2: float32,
@@ -117,7 +117,7 @@ windowed_program_3d_camera_path_catmull_rom_scalar :: (
         + b2 * ((t - t1) / (t2 - t1));
 }
 
-sample_windowed_program_3d_camera_path_segment :: (
+sample_camera_path_segment :: (
     path: *Windowed_Program_3D_Camera_Path,
     segment_index: s64,
     amount: float32,
@@ -139,19 +139,19 @@ sample_windowed_program_3d_camera_path_segment :: (
         else p2 + (p2 - p1);
 
     yaw1 := key1.yaw;
-    yaw2 := yaw1 + windowed_program_3d_camera_path_shortest_turn_delta(yaw1, key2.yaw);
+    yaw2 := yaw1 + camera_path_shortest_turn_delta(yaw1, key2.yaw);
     yaw0 := ifx segment_index > 0
-        then yaw1 + windowed_program_3d_camera_path_shortest_turn_delta(
+        then yaw1 + camera_path_shortest_turn_delta(
             yaw1,
             path.keyframes[segment_index - 1].yaw,
         )
-        else yaw1 - windowed_program_3d_camera_path_shortest_turn_delta(yaw1, yaw2);
+        else yaw1 - camera_path_shortest_turn_delta(yaw1, yaw2);
     yaw3 := ifx segment_index + 2 < count
-        then yaw2 + windowed_program_3d_camera_path_shortest_turn_delta(
+        then yaw2 + camera_path_shortest_turn_delta(
             yaw2,
             path.keyframes[segment_index + 2].yaw,
         )
-        else yaw2 + windowed_program_3d_camera_path_shortest_turn_delta(yaw1, yaw2);
+        else yaw2 + camera_path_shortest_turn_delta(yaw1, yaw2);
 
     pitch0 := ifx segment_index > 0
         then path.keyframes[segment_index - 1].pitch
@@ -161,13 +161,13 @@ sample_windowed_program_3d_camera_path_segment :: (
         else key2.pitch + (key2.pitch - key1.pitch);
 
     sample: Windowed_Program_3D_Camera_Keyframe;
-    sample.position = windowed_program_3d_camera_path_catmull_rom_position(
+    sample.position = camera_path_catmull_rom_position(
         p0, p1, p2, p3, amount,
     );
-    sample.yaw = windowed_program_3d_camera_path_catmull_rom_scalar(
+    sample.yaw = camera_path_catmull_rom_scalar(
         yaw0, yaw1, yaw2, yaw3, p0, p1, p2, p3, amount,
     );
-    sample.pitch = windowed_program_3d_camera_path_catmull_rom_scalar(
+    sample.pitch = camera_path_catmull_rom_scalar(
         pitch0, key1.pitch, key2.pitch, pitch3,
         p0, p1, p2, p3, amount,
     );
@@ -179,7 +179,7 @@ sample_windowed_program_3d_camera_path_segment :: (
     return sample;
 }
 
-sample_windowed_program_3d_camera_path :: (
+sample_camera_path :: (
     path: *Windowed_Program_3D_Camera_Path,
     time_s: float32,
 ) -> Windowed_Program_3D_Camera_Keyframe {
@@ -194,43 +194,44 @@ sample_windowed_program_3d_camera_path :: (
     segment_index := min(cast(s64) floor(segment_position), count - 2);
     amount := segment_position - cast(float32) segment_index;
     if clamped_time >= duration amount = 1;
-    return sample_windowed_program_3d_camera_path_segment(path, segment_index, amount);
+    return sample_camera_path_segment(path, segment_index, amount);
 }
 
-apply_windowed_program_3d_camera_keyframe :: (
+apply_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
     keyframe: Windowed_Program_3D_Camera_Keyframe,
 ) {
-    set_windowed_program_3d_view_preset(base3d, .PERSPECTIVE);
+    restore_free_view(base3d);
+    set_orthographic(base3d, false);
     camera.position = keyframe.position;
     camera.yaw = keyframe.yaw;
     camera.pitch = keyframe.pitch;
     camera_velocity = .{};
 }
 
-add_windowed_program_3d_camera_keyframe :: (
+add_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
 ) -> s64 {
     camera_path.playing = false;
-    array_add(*camera_path.keyframes, windowed_program_3d_camera_keyframe_from_camera(*camera));
+    array_add(*camera_path.keyframes, camera_keyframe_from_camera(*camera));
     camera_path.selected_index = camera_path.keyframes.count - 1;
     camera_path.visible = true;
     camera_path.changed_this_frame = true;
     return camera_path.selected_index;
 }
 
-update_selected_windowed_program_3d_camera_keyframe :: (
+update_selected_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
 ) -> bool {
     index := camera_path.selected_index;
     if index < 0 || index >= camera_path.keyframes.count return false;
     camera_path.playing = false;
-    camera_path.keyframes[index] = windowed_program_3d_camera_keyframe_from_camera(*camera);
+    camera_path.keyframes[index] = camera_keyframe_from_camera(*camera);
     camera_path.changed_this_frame = true;
     return true;
 }
 
-remove_selected_windowed_program_3d_camera_keyframe :: (
+remove_selected_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
 ) -> bool {
     index := camera_path.selected_index;
@@ -246,7 +247,7 @@ remove_selected_windowed_program_3d_camera_keyframe :: (
     return true;
 }
 
-select_windowed_program_3d_camera_keyframe :: (
+select_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
     index: s64,
     jump_to_keyframe: bool = true,
@@ -255,12 +256,12 @@ select_windowed_program_3d_camera_keyframe :: (
     camera_path.playing = false;
     camera_path.selected_index = index;
     if jump_to_keyframe {
-        apply_windowed_program_3d_camera_keyframe(base3d, camera_path.keyframes[index]);
+        apply_camera_keyframe(base3d, camera_path.keyframes[index]);
     }
     return true;
 }
 
-step_windowed_program_3d_camera_keyframe :: (
+step_camera_keyframe :: (
     using base3d: *Windowed_Program_3D_Base,
     direction: s64,
 ) -> bool {
@@ -269,10 +270,10 @@ step_windowed_program_3d_camera_keyframe :: (
     index := camera_path.selected_index;
     if index < 0 index = 0;
     else index = (index + direction + count) % count;
-    return select_windowed_program_3d_camera_keyframe(base3d, index, true);
+    return select_camera_keyframe(base3d, index, true);
 }
 
-set_windowed_program_3d_camera_path_playing :: (
+set_camera_path_playing :: (
     using base3d: *Windowed_Program_3D_Base,
     playing: bool,
     restart: bool = true,
@@ -282,17 +283,18 @@ set_windowed_program_3d_camera_path_playing :: (
     if !playing return true;
 
     if restart camera_path.playback_time_s = 0;
-    set_windowed_program_3d_view_preset(base3d, .PERSPECTIVE);
-    set_windowed_program_3d_camera_look_active(base3d, false);
+    restore_free_view(base3d);
+    set_orthographic(base3d, false);
+    set_camera_look_active(base3d, false);
     camera_velocity = .{};
-    apply_windowed_program_3d_camera_keyframe(
+    apply_camera_keyframe(
         base3d,
-        sample_windowed_program_3d_camera_path(*camera_path, camera_path.playback_time_s),
+        sample_camera_path(*camera_path, camera_path.playback_time_s),
     );
     return true;
 }
 
-update_windowed_program_3d_camera_path_playback :: (
+update_camera_path_playback :: (
     using base3d: *Windowed_Program_3D_Base,
     dt: float32,
 ) {
@@ -312,13 +314,13 @@ update_windowed_program_3d_camera_path_playback :: (
         }
     }
 
-    apply_windowed_program_3d_camera_keyframe(
+    apply_camera_keyframe(
         base3d,
-        sample_windowed_program_3d_camera_path(*camera_path, camera_path.playback_time_s),
+        sample_camera_path(*camera_path, camera_path.playback_time_s),
     );
 }
 
-windowed_program_3d_camera_path_project_to_ui :: (
+camera_path_project_to_ui :: (
     world_position: Vector3,
     world_to_camera: Matrix4,
     camera_to_clip: Matrix4,
@@ -337,7 +339,7 @@ windowed_program_3d_camera_path_project_to_ui :: (
     }, true;
 }
 
-windowed_program_3d_camera_keyframe_forward :: (
+camera_keyframe_forward :: (
     keyframe: Windowed_Program_3D_Camera_Keyframe,
 ) -> Vector3 {
     key_camera: Camera;
@@ -347,7 +349,7 @@ windowed_program_3d_camera_keyframe_forward :: (
     return get_forward(*key_camera);
 }
 
-hit_test_windowed_program_3d_camera_path :: (
+hit_test_camera_path :: (
     using base3d: *Windowed_Program_3D_Base,
     mouse_bottom_left: Vector2,
     viewport_width: s32,
@@ -359,7 +361,7 @@ hit_test_windowed_program_3d_camera_path :: (
         * camera_path.keyframe_hit_radius_px;
     best_index: s64 = -1;
     for keyframe, keyframe_index: camera_path.keyframes {
-        screen, projected := windowed_program_3d_camera_path_project_to_ui(
+        screen, projected := camera_path_project_to_ui(
             keyframe.position,
             world_to_camera,
             camera_to_clip,
@@ -375,47 +377,47 @@ hit_test_windowed_program_3d_camera_path :: (
     return best_index, best_index >= 0;
 }
 
-update_windowed_program_3d_camera_path_editor :: (
+update_camera_path_editor :: (
     using base3d: *Windowed_Program_3D_Base,
 ) {
     camera_path.changed_this_frame = false;
-    if !camera_path_editor_enabled || camera_mode == .TWO_DIMENSIONS ||
+    if !camera_path_editor_enabled ||
        current_menu != .NONE || transform_operation.type != .NONE {
-        update_windowed_program_3d_camera_path_playback(base3d, cast(float32) delta_time);
+        update_camera_path_playback(base3d, cast(float32) delta_time);
         return;
     }
 
     control_down := key_pressed(Input.Key_Code.CTRL);
     if control_down && key_just_pressed(xx #char "K") {
-        add_windowed_program_3d_camera_keyframe(base3d);
+        add_camera_keyframe(base3d);
     }
     if control_down && key_just_pressed(Input.Key_Code.ARROW_LEFT) {
-        step_windowed_program_3d_camera_keyframe(base3d, -1);
+        step_camera_keyframe(base3d, -1);
     }
     if control_down && key_just_pressed(Input.Key_Code.ARROW_RIGHT) {
-        step_windowed_program_3d_camera_keyframe(base3d, 1);
+        step_camera_keyframe(base3d, 1);
     }
     if control_down && key_just_pressed(Input.Key_Code.ENTER) {
-        update_selected_windowed_program_3d_camera_keyframe(base3d);
+        update_selected_camera_keyframe(base3d);
     }
     if control_down && key_just_pressed(Input.Key_Code.DELETE) {
-        remove_selected_windowed_program_3d_camera_keyframe(base3d);
+        remove_selected_camera_keyframe(base3d);
     }
     if control_down && key_just_pressed(xx #char "H") {
         camera_path.visible = !camera_path.visible;
     }
     if control_down && key_just_pressed(xx #char " ") {
-        set_windowed_program_3d_camera_path_playing(
+        set_camera_path_playing(
             base3d,
             !camera_path.playing,
             restart = true,
         );
     }
 
-    update_windowed_program_3d_camera_path_playback(base3d, cast(float32) delta_time);
+    update_camera_path_playback(base3d, cast(float32) delta_time);
 }
 
-render_windowed_program_3d_camera_path :: (
+render_camera_path :: (
     using base3d: *Windowed_Program_3D_Base,
     viewport_left: float32 = 0,
     viewport_top: float32 = 0,
@@ -430,7 +432,7 @@ render_windowed_program_3d_camera_path :: (
     viewport_offset := Vector2.{viewport_left, viewport_top};
     if camera_path.keyframes.count >= 2 {
         samples_per_segment := max(camera_path.preview_samples_per_segment, cast(s32) 2);
-        previous_screen, previous_visible := windowed_program_3d_camera_path_project_to_ui(
+        previous_screen, previous_visible := camera_path_project_to_ui(
             camera_path.keyframes[0].position,
             world_to_camera,
             camera_to_clip,
@@ -441,12 +443,12 @@ render_windowed_program_3d_camera_path :: (
         for segment_index: 0..camera_path.keyframes.count - 2 {
             for sample_index: 1..samples_per_segment {
                 amount := cast(float32) sample_index / cast(float32) samples_per_segment;
-                sample := sample_windowed_program_3d_camera_path_segment(
+                sample := sample_camera_path_segment(
                     *camera_path,
                     segment_index,
                     amount,
                 );
-                screen, visible := windowed_program_3d_camera_path_project_to_ui(
+                screen, visible := camera_path_project_to_ui(
                     sample.position,
                     world_to_camera,
                     camera_to_clip,
@@ -455,7 +457,7 @@ render_windowed_program_3d_camera_path :: (
                 );
                 screen += viewport_offset;
                 if previous_visible && visible {
-                    windowed_program_3d_draw_screen_line(
+                    draw_screen_line(
                         previous_screen,
                         screen,
                         camera_path.curve_thickness_px,
@@ -469,7 +471,7 @@ render_windowed_program_3d_camera_path :: (
     }
 
     for keyframe, keyframe_index: camera_path.keyframes {
-        screen, visible := windowed_program_3d_camera_path_project_to_ui(
+        screen, visible := camera_path_project_to_ui(
             keyframe.position,
             world_to_camera,
             camera_to_clip,
@@ -486,12 +488,12 @@ render_windowed_program_3d_camera_path :: (
         marker_radius := ifx selected
             then camera_path.selected_keyframe_radius_px
             else camera_path.keyframe_radius_px;
-        windowed_program_3d_draw_screen_circle(screen, marker_radius, marker_color, 18);
+        draw_screen_circle(screen, marker_radius, marker_color, 18);
 
         orientation_end := keyframe.position
-            + windowed_program_3d_camera_keyframe_forward(keyframe)
+            + camera_keyframe_forward(keyframe)
             * camera_path.orientation_marker_length;
-        orientation_screen, orientation_visible := windowed_program_3d_camera_path_project_to_ui(
+        orientation_screen, orientation_visible := camera_path_project_to_ui(
             orientation_end,
             world_to_camera,
             camera_to_clip,
@@ -500,7 +502,7 @@ render_windowed_program_3d_camera_path :: (
         );
         orientation_screen += viewport_offset;
         if orientation_visible {
-            windowed_program_3d_draw_screen_line(
+            draw_screen_line(
                 screen,
                 orientation_screen,
                 2.0,

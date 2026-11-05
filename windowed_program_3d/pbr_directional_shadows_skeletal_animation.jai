@@ -28,8 +28,8 @@ init :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_An
     init(*depth_renderer);
     init(*bone_buffer);
     init(*shadow_map);
-    bind_windowed_program_3d_example_bone_block(renderer.shader_program_gl_handle);
-    bind_windowed_program_3d_example_bone_block(depth_renderer.shader_program_gl_handle);
+    bind_example_bone_block(renderer.shader_program_gl_handle);
+    bind_example_bone_block(depth_renderer.shader_program_gl_handle);
 }
 
 deinit :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
@@ -96,7 +96,7 @@ set_renderable_transform :: (
 get_selected_renderable :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
 ) -> *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable {
-    index := windowed_program_3d_selected_renderable_index(*base_3d);
+    index := get_selected_renderable_index(*base_3d);
     if index < 0 || index >= renderables.count return null;
     return *renderables[index];
 }
@@ -111,10 +111,10 @@ set_bone_transforms :: (
     update_skeletal_pickables(*picker, bone_buffer.matrices);
 }
 
-windowed_program_3d_world_to_light_clip :: (
+get_world_to_light_clip :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
 ) -> Matrix4 {
-    return windowed_program_3d_example_light_clip_matrix(
+    return example_light_clip_matrix(
         lighting.direction,
         shadow_center,
         shadow_half_extent,
@@ -124,8 +124,8 @@ windowed_program_3d_world_to_light_clip :: (
 
 per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
     per_frame_update(*base_3d);
-    apply_windowed_program_3d_editor_transform(program, *base_3d);
-    world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
+    apply_editor_transform(program, *base_3d);
+    world_to_light_clip := get_world_to_light_clip(program);
 
     gl_set_active_shader_program(renderer.shader_program_gl_handle);
     set_world_to_camera_uniform(*renderer, world_to_camera);
@@ -147,7 +147,7 @@ per_frame_update :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows
 
 render_shadow_map :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
     if !shadow_map.initialized return;
-    world_to_light_clip := windowed_program_3d_world_to_light_clip(program);
+    world_to_light_clip := get_world_to_light_clip(program);
 
     upload(*bone_buffer);
     glViewport(0, 0, WINDOWED_PROGRAM_3D_EXAMPLE_SHADOW_MAP_SIZE, WINDOWED_PROGRAM_3D_EXAMPLE_SHADOW_MAP_SIZE);
@@ -166,20 +166,20 @@ render_shadow_map :: (using program: *Windowed_Program_3D_PBR_Directional_Shadow
 }
 
 render_scene :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
-    begin_windowed_program_3d_example_render(*base_3d, clear_color);
+    begin_example_render(*base_3d, clear_color);
     render_shadow_map(program);
-    bind_windowed_program_3d_example_material_textures(material_textures);
+    bind_example_material_textures(material_textures);
     gl_set_active_texture_unit(GL_TEXTURE3);
     gl_bind_texture_to_binding_target_of_active_texture_unit(GL_TEXTURE_2D, shadow_map.depth_texture_gl_handle);
     gl_set_active_texture_unit(GL_TEXTURE0);
     upload(*bone_buffer);
     for renderable: renderables queue_render(*renderer, renderable.shaded);
-    begin_windowed_program_3d_geometry_render(*base_3d);
+    begin_geometry_render(*base_3d);
     render(*renderer);
-    end_windowed_program_3d_geometry_render(*base_3d);
-    end_windowed_program_3d_example_render(*base_3d);
+    end_geometry_render(*base_3d);
+    end_example_render(*base_3d);
 }
 
 run :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation) {
-    while !end_program run_windowed_program_3d_example_frame(program, *base_3d);
+    while !end_program run_example_frame(program, *base_3d);
 }

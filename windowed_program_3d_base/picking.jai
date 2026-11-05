@@ -7,7 +7,7 @@ Windowed_Program_3D_Editor_Permissions :: enum_flags u8 {
     ALL           :: SELECTABLE | TRANSFORMABLE;
 }
 
-windowed_program_3d_has_editor_permission :: (
+has_editor_permission :: (
     permissions: Windowed_Program_3D_Editor_Permissions,
     permission: Windowed_Program_3D_Editor_Permissions,
 ) -> bool {
@@ -371,7 +371,7 @@ pickable_is_transformable :: (
     object_id: u32,
 ) -> bool {
     permissions, found := get_pickable_editor_permissions(picker, object_id);
-    return found && windowed_program_3d_has_editor_permission(permissions, .TRANSFORMABLE);
+    return found && has_editor_permission(permissions, .TRANSFORMABLE);
 }
 
 Windowed_Program_3D_Pick_Hit :: struct {
@@ -380,7 +380,7 @@ Windowed_Program_3D_Pick_Hit :: struct {
     editor_permissions: Windowed_Program_3D_Editor_Permissions;
 }
 
-windowed_program_3d_ray_intersects_bounds :: (
+ray_intersects_bounds :: (
     ray_origin: Vector3,
     ray_direction: Vector3,
     bounds_min: Vector3,
@@ -410,7 +410,7 @@ windowed_program_3d_ray_intersects_bounds :: (
     return maximum_distance >= 0;
 }
 
-windowed_program_3d_ray_triangle_distance :: (
+ray_triangle_distance :: (
     ray_origin: Vector3,
     ray_direction: Vector3,
     a: Vector3,
@@ -453,7 +453,7 @@ pick_all :: (
         local_origin := Vector3.{local_origin_4.x, local_origin_4.y, local_origin_4.z};
         local_direction := Vector3.{local_direction_4.x, local_direction_4.y, local_direction_4.z};
         if length_squared(local_direction) <= 0.0000001 continue;
-        if !windowed_program_3d_ray_intersects_bounds(
+        if !ray_intersects_bounds(
             local_origin,
             local_direction,
             pickable.local_bounds_min,
@@ -471,7 +471,7 @@ pick_all :: (
                 index_c := indices[triangle_index * 3 + 2];
                 if index_a >= positions.count || index_b >= positions.count || index_c >= positions.count continue;
 
-                distance, hit := windowed_program_3d_ray_triangle_distance(
+                distance, hit := ray_triangle_distance(
                     local_origin,
                     local_direction,
                     positions[index_a],
@@ -501,14 +501,14 @@ pick_all :: (
 
     selectable_hit_count: s64;
     for hit: hits.* {
-        if !windowed_program_3d_has_editor_permission(hit.editor_permissions, .SELECTABLE) break;
+        if !has_editor_permission(hit.editor_permissions, .SELECTABLE) break;
         hits.*[selectable_hit_count] = hit;
         selectable_hit_count += 1;
     }
     array_resize(hits, selectable_hit_count);
 }
 
-windowed_program_3d_project_to_screen :: (
+project_to_screen :: (
     local_position: Vector3,
     local_to_world: Matrix4,
     world_to_camera: Matrix4,
@@ -530,7 +530,7 @@ windowed_program_3d_project_to_screen :: (
     return screen_position, ndc.z, true;
 }
 
-windowed_program_3d_projected_triangle_overlaps_rectangle :: (
+projected_triangle_overlaps_rectangle :: (
     a: Vector2,
     b: Vector2,
     c: Vector2,
@@ -598,7 +598,7 @@ pick_in_screen_rectangle :: (
     rectangle_max := Vector2.{max(start_mouse.x, end_mouse.x), max(start_mouse.y, end_mouse.y)};
 
     for pickable: pickables {
-        if !windowed_program_3d_has_editor_permission(
+        if !has_editor_permission(
             pickable.editor_permissions,
             .SELECTABLE,
         ) continue;
@@ -613,15 +613,15 @@ pick_in_screen_rectangle :: (
             index_c := indices[triangle_index * 3 + 2];
             if index_a >= positions.count || index_b >= positions.count || index_c >= positions.count continue;
 
-            a, depth_a, a_ok := windowed_program_3d_project_to_screen(
+            a, depth_a, a_ok := project_to_screen(
                 positions[index_a], pickable.local_to_world, world_to_camera,
                 camera_to_clip, viewport_width, viewport_height,
             );
-            b, depth_b, b_ok := windowed_program_3d_project_to_screen(
+            b, depth_b, b_ok := project_to_screen(
                 positions[index_b], pickable.local_to_world, world_to_camera,
                 camera_to_clip, viewport_width, viewport_height,
             );
-            c, depth_c, c_ok := windowed_program_3d_project_to_screen(
+            c, depth_c, c_ok := project_to_screen(
                 positions[index_c], pickable.local_to_world, world_to_camera,
                 camera_to_clip, viewport_width, viewport_height,
             );
@@ -629,7 +629,7 @@ pick_in_screen_rectangle :: (
             if (depth_a < -1 && depth_b < -1 && depth_c < -1) ||
                (depth_a > 1 && depth_b > 1 && depth_c > 1) continue;
 
-            if windowed_program_3d_projected_triangle_overlaps_rectangle(
+            if projected_triangle_overlaps_rectangle(
                 a, b, c, rectangle_min, rectangle_max,
             ) {
                 intersects = true;
@@ -641,7 +641,7 @@ pick_in_screen_rectangle :: (
     }
 }
 
-windowed_program_3d_id_is_selected :: (selected_object_ids: [] u32, object_id: u32) -> bool {
+id_is_selected :: (selected_object_ids: [] u32, object_id: u32) -> bool {
     for selected_id: selected_object_ids {
         if selected_id == object_id return true;
     }
@@ -687,7 +687,7 @@ prepare_selection_outline :: (
     glClear(GL_DEPTH_BUFFER_BIT);
     selected_pickable_count: s64;
     for pickable: pickables {
-        if !windowed_program_3d_id_is_selected(selected_object_ids, pickable.object_id) continue;
+        if !id_is_selected(selected_object_ids, pickable.object_id) continue;
         queue_render(*selected_depth_renderer, pickable.mesh);
         selected_pickable_count += 1;
     }

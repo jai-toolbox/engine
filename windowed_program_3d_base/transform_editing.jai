@@ -24,7 +24,7 @@ Windowed_Program_3D_Editor_Transform_Update :: struct {
     transform: Matrix4 = Matrix4_Identity;
 }
 
-windowed_program_3d_clear_transform_operation :: (
+clear_transform_operation :: (
     operation: *Windowed_Program_3D_Transform_Operation,
 ) {
     operation.type = .NONE;
@@ -34,7 +34,7 @@ windowed_program_3d_clear_transform_operation :: (
     array_resize(*operation.targets, 0);
 }
 
-windowed_program_3d_transform_operation_contains :: (
+transform_operation_contains :: (
     operation: *Windowed_Program_3D_Transform_Operation,
     object_id: u32,
 ) -> bool {
@@ -44,18 +44,18 @@ windowed_program_3d_transform_operation_contains :: (
     return false;
 }
 
-windowed_program_3d_transform_pivot :: (transform: Matrix4) -> Vector3 {
+transform_pivot :: (transform: Matrix4) -> Vector3 {
     return .{transform._14, transform._24, transform._34};
 }
 
-windowed_program_3d_transform_axis :: (axis_constraint: s32) -> Vector3 {
+transform_axis :: (axis_constraint: s32) -> Vector3 {
     if axis_constraint == 0 return .{1, 0, 0};
     if axis_constraint == 1 return .{0, 1, 0};
     if axis_constraint == 2 return .{0, 0, 1};
     return .{};
 }
 
-windowed_program_3d_ray_from_screen :: (
+ray_from_screen :: (
     mouse: Vector2,
     viewport_width: s32,
     viewport_height: s32,
@@ -87,7 +87,7 @@ windowed_program_3d_ray_from_screen :: (
     return world_near, normalize(ray), true;
 }
 
-windowed_program_3d_ray_plane_intersection :: (
+ray_plane_intersection :: (
     ray_origin: Vector3,
     ray_direction: Vector3,
     plane_point: Vector3,
@@ -99,7 +99,7 @@ windowed_program_3d_ray_plane_intersection :: (
     return ray_origin + ray_direction * distance, true;
 }
 
-windowed_program_3d_publish_editor_transform :: (
+publish_editor_transform :: (
     using base3d: *Windowed_Program_3D_Base,
     object_id: u32,
     transform: Matrix4,
@@ -124,7 +124,7 @@ windowed_program_3d_publish_editor_transform :: (
     editor_transform_changed = true;
 }
 
-begin_windowed_program_3d_transform_operation :: (
+begin_transform_operation :: (
     using base3d: *Windowed_Program_3D_Base,
     operation_type: Windowed_Program_3D_Transform_Operation_Type,
     mouse: Vector2,
@@ -143,7 +143,7 @@ begin_windowed_program_3d_transform_operation :: (
             original_transform = transform,
             preview_transform = transform,
         });
-        pivot_sum += windowed_program_3d_transform_pivot(transform);
+        pivot_sum += transform_pivot(transform);
     }
     if transform_operation.targets.count == 0 return false;
 
@@ -155,24 +155,24 @@ begin_windowed_program_3d_transform_operation :: (
     return true;
 }
 
-cancel_windowed_program_3d_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
+cancel_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
     if transform_operation.type == .NONE return;
     for target: transform_operation.targets {
-        windowed_program_3d_publish_editor_transform(
+        publish_editor_transform(
             base3d,
             target.object_id,
             target.original_transform,
         );
     }
-    windowed_program_3d_clear_transform_operation(*transform_operation);
+    clear_transform_operation(*transform_operation);
 }
 
-confirm_windowed_program_3d_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
+confirm_transform_operation :: (using base3d: *Windowed_Program_3D_Base) {
     if transform_operation.type == .NONE return;
-    windowed_program_3d_clear_transform_operation(*transform_operation);
+    clear_transform_operation(*transform_operation);
 }
 
-update_windowed_program_3d_transform_operation :: (
+update_transform_operation :: (
     using base3d: *Windowed_Program_3D_Base,
     mouse: Vector2,
     viewport_width: s32,
@@ -181,8 +181,8 @@ update_windowed_program_3d_transform_operation :: (
     operation := transform_operation;
     if operation.type == .NONE return;
     for target: operation.targets {
-        if !windowed_program_3d_selection_contains(base3d, target.object_id) {
-            cancel_windowed_program_3d_transform_operation(base3d);
+        if !selection_contains(base3d, target.object_id) {
+            cancel_transform_operation(base3d);
             return;
         }
     }
@@ -191,7 +191,7 @@ update_windowed_program_3d_transform_operation :: (
     if operation.type == .MOVE {
         camera_forward := normalize(get_forward(*camera));
         plane_normal := camera_forward;
-        axis := windowed_program_3d_transform_axis(operation.axis_constraint);
+        axis := transform_axis(operation.axis_constraint);
         if operation.axis_constraint >= 0 {
             // Use the camera-facing plane that contains the constrained axis.
             // This remains stable for oblique views and avoids pixel-scale magic.
@@ -208,14 +208,14 @@ update_windowed_program_3d_transform_operation :: (
             plane_normal = normalize(plane_normal);
         }
 
-        start_origin, start_direction, start_ray_ok := windowed_program_3d_ray_from_screen(
+        start_origin, start_direction, start_ray_ok := ray_from_screen(
             operation.start_mouse,
             viewport_width,
             viewport_height,
             world_to_camera,
             camera_to_clip,
         );
-        current_origin, current_direction, current_ray_ok := windowed_program_3d_ray_from_screen(
+        current_origin, current_direction, current_ray_ok := ray_from_screen(
             mouse,
             viewport_width,
             viewport_height,
@@ -224,13 +224,13 @@ update_windowed_program_3d_transform_operation :: (
         );
         if !start_ray_ok || !current_ray_ok return;
 
-        start_hit, start_hit_ok := windowed_program_3d_ray_plane_intersection(
+        start_hit, start_hit_ok := ray_plane_intersection(
             start_origin,
             start_direction,
             operation.pivot,
             plane_normal,
         );
-        current_hit, current_hit_ok := windowed_program_3d_ray_plane_intersection(
+        current_hit, current_hit_ok := ray_plane_intersection(
             current_origin,
             current_direction,
             operation.pivot,
@@ -245,7 +245,7 @@ update_windowed_program_3d_transform_operation :: (
         mouse_delta := mouse - operation.start_mouse;
         angle := (mouse_delta.x + mouse_delta.y * 0.35) * 0.01;
         axis := ifx operation.axis_constraint >= 0
-            then windowed_program_3d_transform_axis(operation.axis_constraint)
+            then transform_axis(operation.axis_constraint)
             else normalize(get_forward(*camera));
         rotation: Quaternion;
         set_from_axis_and_angle(*rotation, axis, angle);
@@ -272,11 +272,11 @@ update_windowed_program_3d_transform_operation :: (
     for *target: operation.targets {
         result := edit_transform * target.original_transform;
         target.preview_transform = result;
-        windowed_program_3d_publish_editor_transform(base3d, target.object_id, result);
+        publish_editor_transform(base3d, target.object_id, result);
     }
 }
 
-render_windowed_program_3d_transform_operation_status :: (
+render_transform_operation_status :: (
     using base3d: *Windowed_Program_3D_Base,
     viewport_left: float32 = 0,
     viewport_bottom: float32 = -1,
