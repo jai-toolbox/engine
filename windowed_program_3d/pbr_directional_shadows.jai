@@ -1,15 +1,15 @@
 // Directional-shadow PBR is one rendering path made from a shaded renderer and
 // a depth-only renderer. Keeping both here makes the complete pass easy to copy.
 Windowed_Program_3D_PBR_Directional_Shadows_Renderable :: struct {
-    shaded: Gpu_Style_Pbr_Directional_Shadows_Renderable;
-    depth: Gpu_Style_Pbr_Directional_Shadow_Depth_Renderable;
+    shaded: Pbr_Directional_Shadows_Renderable;
+    depth: Pbr_Directional_Shadow_Depth_Renderable;
 }
 
 Windowed_Program_3D_PBR_Directional_Shadows :: struct {
     using #as base_3d: Windowed_Program_3D_Base;
 
-    renderer: Gpu_Style_Pbr_Directional_Shadows_Renderer;
-    depth_renderer: Gpu_Style_Pbr_Directional_Shadow_Depth_Renderer;
+    renderer: Pbr_Directional_Shadows_Renderer;
+    depth_renderer: Pbr_Directional_Shadow_Depth_Renderer;
     renderables: [..] Windowed_Program_3D_PBR_Directional_Shadows_Renderable;
     shadow_map: Windowed_Program_3D_Example_Shadow_Map;
     material_textures: Windowed_Program_3D_Example_Material_Textures;
@@ -42,7 +42,7 @@ deinit :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows) {
 
 add_renderable :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows,
-    geometry: $T/interface Gpu_Style_Pbr_Geometry,
+    geometry: $T/interface Pbr_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
     editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
 ) -> *Windowed_Program_3D_PBR_Directional_Shadows_Renderable {

@@ -3,8 +3,8 @@
 Windowed_Program_3D_Vertex_Colors :: struct {
     using #as base_3d: Windowed_Program_3D_Base;
 
-    renderer: Gpu_Style_Vertex_Color_Renderer;
-    renderables: [..] Gpu_Style_Vertex_Color_Renderable;
+    renderer: Vertex_Color_Renderer;
+    renderables: [..] Vertex_Color_Renderable;
     clear_color: Windowed_Program_3D_Example_Clear_Color;
 }
 
@@ -22,10 +22,10 @@ deinit :: (using program: *Windowed_Program_3D_Vertex_Colors) {
 
 add_renderable :: (
     using program: *Windowed_Program_3D_Vertex_Colors,
-    geometry: $T/interface Gpu_Style_Vertex_Color_Geometry,
+    geometry: $T/interface Vertex_Color_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
     editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
-) -> *Gpu_Style_Vertex_Color_Renderable {
+) -> *Vertex_Color_Renderable {
     renderable := array_add(*renderables);
     assign_geometry_copy(renderable, geometry);
     if !buffer_object(*renderer, renderable) {
@@ -52,7 +52,7 @@ set_renderable_transform :: (
     return set_pickable_transform(*picker, object_id, local_to_world);
 }
 
-get_selected_renderable :: (using program: *Windowed_Program_3D_Vertex_Colors) -> *Gpu_Style_Vertex_Color_Renderable {
+get_selected_renderable :: (using program: *Windowed_Program_3D_Vertex_Colors) -> *Vertex_Color_Renderable {
     index := get_selected_renderable_index(*base_3d);
     if index < 0 || index >= renderables.count return null;
     return *renderables[index];

@@ -2,8 +2,8 @@
 Windowed_Program_3D_PBR :: struct {
     using #as base_3d: Windowed_Program_3D_Base;
 
-    renderer: Gpu_Style_Pbr_Renderer;
-    renderables: [..] Gpu_Style_Pbr_Renderable;
+    renderer: Pbr_Renderer;
+    renderables: [..] Pbr_Renderable;
     material_textures: Windowed_Program_3D_Example_Material_Textures;
     lighting: Windowed_Program_3D_Example_PBR_Lighting;
     clear_color: Windowed_Program_3D_Example_Clear_Color;
@@ -23,10 +23,10 @@ deinit :: (using program: *Windowed_Program_3D_PBR) {
 
 add_renderable :: (
     using program: *Windowed_Program_3D_PBR,
-    geometry: $T/interface Gpu_Style_Pbr_Geometry,
+    geometry: $T/interface Pbr_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
     editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
-) -> *Gpu_Style_Pbr_Renderable {
+) -> *Pbr_Renderable {
     renderable := array_add(*renderables);
     assign_geometry_copy(renderable, geometry);
     if !buffer_object(*renderer, renderable) {
@@ -53,7 +53,7 @@ set_renderable_transform :: (
     return set_pickable_transform(*picker, object_id, local_to_world);
 }
 
-get_selected_renderable :: (using program: *Windowed_Program_3D_PBR) -> *Gpu_Style_Pbr_Renderable {
+get_selected_renderable :: (using program: *Windowed_Program_3D_PBR) -> *Pbr_Renderable {
     index := get_selected_renderable_index(*base_3d);
     if index < 0 || index >= renderables.count return null;
     return *renderables[index];

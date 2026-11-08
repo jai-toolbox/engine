@@ -2,8 +2,8 @@
 Windowed_Program_3D_Blinn_Phong :: struct {
     using #as base_3d: Windowed_Program_3D_Base;
 
-    renderer: Gpu_Style_Blinn_Phong_Renderer;
-    renderables: [..] Gpu_Style_Blinn_Phong_Renderable;
+    renderer: Blinn_Phong_Renderer;
+    renderables: [..] Blinn_Phong_Renderable;
     material_textures: Windowed_Program_3D_Example_Material_Textures;
 
     ambient: float32 = 0.16;
@@ -26,10 +26,10 @@ deinit :: (using program: *Windowed_Program_3D_Blinn_Phong) {
 
 add_renderable :: (
     using program: *Windowed_Program_3D_Blinn_Phong,
-    geometry: $T/interface Gpu_Style_Blinn_Phong_Geometry,
+    geometry: $T/interface Blinn_Phong_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
     editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
-) -> *Gpu_Style_Blinn_Phong_Renderable {
+) -> *Blinn_Phong_Renderable {
     renderable := array_add(*renderables);
     assign_geometry_copy(renderable, geometry);
     if !buffer_object(*renderer, renderable) {
@@ -56,7 +56,7 @@ set_renderable_transform :: (
     return set_pickable_transform(*picker, object_id, local_to_world);
 }
 
-get_selected_renderable :: (using program: *Windowed_Program_3D_Blinn_Phong) -> *Gpu_Style_Blinn_Phong_Renderable {
+get_selected_renderable :: (using program: *Windowed_Program_3D_Blinn_Phong) -> *Blinn_Phong_Renderable {
     index := get_selected_renderable_index(*base_3d);
     if index < 0 || index >= renderables.count return null;
     return *renderables[index];

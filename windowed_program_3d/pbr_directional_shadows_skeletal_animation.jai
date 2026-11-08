@@ -1,15 +1,15 @@
 // The most involved example still has one purpose: skinned PBR with one
 // directional shadow. Animation sampling remains application-owned.
 Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable :: struct {
-    shaded: Gpu_Style_Pbr_Directional_Shadows_Skeletal_Animation_Renderable;
-    depth: Gpu_Style_Pbr_Directional_Shadow_Depth_Skeletal_Animation_Renderable;
+    shaded: Pbr_Directional_Shadows_Skeletal_Animation_Renderable;
+    depth: Pbr_Directional_Shadow_Depth_Skeletal_Animation_Renderable;
 }
 
 Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation :: struct {
     using #as base_3d: Windowed_Program_3D_Base;
 
-    renderer: Gpu_Style_Pbr_Directional_Shadows_Skeletal_Animation_Renderer;
-    depth_renderer: Gpu_Style_Pbr_Directional_Shadow_Depth_Skeletal_Animation_Renderer;
+    renderer: Pbr_Directional_Shadows_Skeletal_Animation_Renderer;
+    depth_renderer: Pbr_Directional_Shadow_Depth_Skeletal_Animation_Renderer;
     renderables: [..] Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable;
     bone_buffer: Windowed_Program_3D_Example_Bone_Buffer;
     shadow_map: Windowed_Program_3D_Example_Shadow_Map;
@@ -47,7 +47,7 @@ deinit :: (using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_
 
 add_renderable :: (
     using program: *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation,
-    geometry: $T/interface Gpu_Style_Pbr_Skeletal_Animation_Geometry,
+    geometry: $T/interface Pbr_Skeletal_Animation_Geometry,
     local_to_world: Matrix4 = Matrix4_Identity,
     editor_permissions: Windowed_Program_3D_Editor_Permissions = .ALL,
 ) -> *Windowed_Program_3D_PBR_Directional_Shadows_Skeletal_Animation_Renderable {
