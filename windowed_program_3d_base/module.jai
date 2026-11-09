@@ -29,6 +29,7 @@
 #load "../windowed_program.jai";
 #load "../windowed_menu_program.jai";
 #load "../crosshair_editor.jai";
+#load "../crosshair_page.jai";
 #load "../graphs.jai";
 #load "../sound.jai";
 #load "picking.jai";

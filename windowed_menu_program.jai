@@ -9,7 +9,8 @@ Current_Menu :: enum {
     OPEN_MODEL;
     GRAPHICS_SETTINGS;
     USER_SETTINGS;
-    CROSSHAIR_EDITOR;
+    CROSSHAIR_SETTINGS;
+    CROSSHAIR_EDITOR; // Compatibility alias for the dedicated settings page.
     SOUND_SETTINGS;
     IN_GAME;
     NONE;
@@ -225,8 +226,7 @@ Windowed_Menu_Program :: struct {
     show_open_model_menu := true;
     show_scene_graphics_settings := true;
     show_3d_graphics_settings := false;
-    crosshair_editor: Engine_Crosshair_Editor;
-    crosshair_delete_confirmation: bool;
+    using crosshair_page: Engine_Crosshair_Page;
 }
 
 
@@ -236,7 +236,7 @@ init :: (using wmp : *Windowed_Menu_Program) {
 
 deinit :: (using wmp : *Windowed_Menu_Program) {
     log("windowed menu program deinit called");
-    deinit_engine_crosshair_editor(*crosshair_editor);
+    deinit_engine_crosshair_page(*crosshair_page);
     deinit(*wmpb);
 }
 
@@ -396,6 +396,11 @@ draw_overlay_background :: (alpha: float32 = 0.75) {
 
 
 toggle_menu :: (using wp: *Windowed_Menu_Program) {
+    if current_menu == .CROSSHAIR_SETTINGS || current_menu == .CROSSHAIR_EDITOR {
+        // The page receives Escape through the UI input bridge and owns its
+        // unsaved-changes prompt; do not process the same key twice here.
+        return;
+    }
     if current_menu == .NONE {
         current_menu = .IN_GAME;
         show_cursor(wp);
@@ -408,7 +413,10 @@ toggle_menu :: (using wp: *Windowed_Menu_Program) {
 render_main_menu :: (using wp : *Windowed_Menu_Program) {
     content_y := draw_page_header(window_name);
 
-    push_centered_layout(280.0, content_y, 50.0, 14.0, 22.0);
+    button_count: float32 = ifx show_open_model_menu then 7.0 else 6.0;
+    button_height := clamp((ui_ctx.window_h - content_y - 64.0 - (button_count - 1) * 14.0)
+                            / button_count, 30.0, 50.0);
+    push_centered_layout(280.0, content_y, button_height, 14.0, 22.0);
 
     if ui_menu_button("Start", GREEN_NORMAL, GREEN_HOVER, GREEN_ACTIVE) {
         toggle_menu(wp);
@@ -427,6 +435,12 @@ render_main_menu :: (using wp : *Windowed_Menu_Program) {
     if ui_menu_button("User Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
         menu_return_to = .MAIN;
         current_menu = .USER_SETTINGS;
+    }
+
+    if ui_menu_button("Crosshair Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
+        menu_return_to = .MAIN;
+        current_menu = .CROSSHAIR_SETTINGS;
+        if ui_ctx != null ui_ctx.focused = UI_ID_NONE;
     }
 
     if ui_menu_button("Sound Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
@@ -574,116 +588,9 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     ui_spacing(12);
 
     ui_slider_float("Sensitivity", *sensitivity, 0.01, 5.0);
-    ui_spacing(12);
-    ui_checkbox("Show crosshair", *crosshair_settings.enabled);
-
-    if crosshair_file.library.paths.count > 0 {
-        labels := NewArray(crosshair_file.library.paths.count, string,, allocator = temp);
-        for crosshair_file.library.paths labels[it_index] = crosshair_obj_display_name(it);
-        selection := crosshair_file.selection;
-        if ui_dropdown("Crosshair", labels, *selection) {
-            crosshair_delete_confirmation = false;
-            crosshair_file.selection = selection;
-            load_crosshair_file(*crosshair_file, crosshair_file.library.paths[selection]);
-            crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
-            crosshair_editor.status = "";
-        }
-        if !crosshair_file.loaded ui_label_disabled("This OBJ could not be rendered.");
-    } else {
-        ui_label_disabled("No OBJ files in data/crosshairs.");
-    }
-
-    if ui_button("Create") {
-        crosshair_delete_confirmation = false;
-        begin_new_engine_crosshair_editor(*crosshair_editor, crosshair_settings.color);
-        current_menu = .CROSSHAIR_EDITOR;
-    }
-    if crosshair_file.loaded && ui_button("Duplicate") {
-        crosshair_delete_confirmation = false;
-        duplicate_path, duplicated, reason := duplicate_crosshair_obj(crosshair_file.path);
-        if duplicated {
-            refresh_crosshair_library(
-                *crosshair_file,
-                configuration.config_path,
-                crosshair_obj_filename(duplicate_path),
-            );
-            crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
-            crosshair_editor.status = "Duplicated and selected.";
-            free(duplicate_path);
-        } else {
-            crosshair_editor.status = reason;
-        }
-    }
-    if crosshair_file.loaded && ui_button("Edit") {
-        crosshair_delete_confirmation = false;
-        if begin_edit_engine_crosshair_editor(*crosshair_editor, crosshair_file.path,
-                                              crosshair_settings.color) {
-            current_menu = .CROSSHAIR_EDITOR;
-        }
-    }
-    selected_crosshair_is_custom := crosshair_file.loaded
-        && !crosshair_is_default_path(crosshair_file.path);
-    if selected_crosshair_is_custom {
-        if !crosshair_delete_confirmation {
-            if ui_button_colored("Delete", RED_NORMAL, RED_HOVER, RED_ACTIVE) {
-                crosshair_delete_confirmation = true;
-                crosshair_editor.status = "";
-            }
-        } else {
-            ui_label_disabled_wrapped(tprint(
-                "Permanently delete %?",
-                crosshair_obj_filename(crosshair_file.path),
-            ));
-            ui_begin_row();
-            if ui_button_colored("Confirm delete", RED_NORMAL, RED_HOVER, RED_ACTIVE) {
-                deleted, reason := delete_custom_crosshair_obj(crosshair_file.path);
-                crosshair_delete_confirmation = false;
-                if deleted {
-                    refresh_crosshair_library(
-                        *crosshair_file,
-                        configuration.config_path,
-                        DEFAULT_CROSSHAIR_FILENAME,
-                    );
-                    crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
-                    crosshair_editor.status = "Deleted the custom crosshair.";
-                } else {
-                    crosshair_editor.status = reason;
-                }
-            }
-            if ui_button("Cancel") crosshair_delete_confirmation = false;
-            ui_end_row();
-        }
-    } else {
-        crosshair_delete_confirmation = false;
-    }
-    if crosshair_editor.status.count > 0 ui_label_disabled(crosshair_editor.status);
-
-    side_preview := ui_ctx.window_w >= 800.0;
-    if !side_preview {
-        ui_label("Crosshair Preview");
-        preview_rect := ui_allocate_rect(140.0, 140.0);
-        draw_selected_crosshair_preview(*crosshair_file, crosshair_settings,
-                                        crosshair_monitor, preview_rect);
-    }
-
-    if ui_button("Refresh crosshair files") {
-        crosshair_delete_confirmation = false;
-        refresh_crosshair_library(*crosshair_file, configuration.config_path);
-        crosshair_settings.color = crosshair_color_from_selected_file(crosshair_file);
-    }
-
     ui_spacing(16);
     ui_end_scroll_region();
     pop_centered_layout();
-
-    if side_preview {
-        preview_rect := UI_Rect.{(ui_ctx.window_w + 440.0) * 0.5 + 24.0,
-                                content_y + 44.0, 140.0, 140.0};
-        ui_cmd_text("CROSSHAIR PREVIEW", preview_rect.x, preview_rect.y - 12.0,
-                    15, .{0.8, 0.86, 0.9, 1});
-        draw_selected_crosshair_preview(*crosshair_file, crosshair_settings,
-                                        crosshair_monitor, preview_rect);
-    }
 
     push_centered_layout(400.0, ui_ctx.window_h - 68.0, 40.0, 10.0, 18.0);
     ui_begin_row();
@@ -692,7 +599,6 @@ render_user_settings :: (using wp : *Windowed_Menu_Program) {
     }
 
     if ui_button_colored("Back", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
-        crosshair_delete_confirmation = false;
         current_menu = menu_return_to;
     }
 
@@ -725,6 +631,12 @@ render_in_game_menu :: (using wp : *Windowed_Menu_Program) {
         current_menu = .USER_SETTINGS;
     }
 
+    if ui_menu_button("Crosshair Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
+        menu_return_to = .IN_GAME;
+        current_menu = .CROSSHAIR_SETTINGS;
+        if ui_ctx != null ui_ctx.focused = UI_ID_NONE;
+    }
+
     if ui_menu_button("Sound Settings", GREY_NORMAL, GREY_HOVER, GREY_ACTIVE) {
         menu_return_to = .IN_GAME;
         current_menu = .SOUND_SETTINGS;
@@ -753,8 +665,10 @@ render_menus :: (using wp : *Windowed_Menu_Program) {
             render_graphics_settings(wp);
         case .USER_SETTINGS;
             render_user_settings(wp);
+        case .CROSSHAIR_SETTINGS;
+            render_crosshair_settings(wp);
         case .CROSSHAIR_EDITOR;
-            render_engine_crosshair_editor(wp);
+            render_crosshair_settings(wp);
         case .SOUND_SETTINGS;
             render_sound_settings(wp);
     }
