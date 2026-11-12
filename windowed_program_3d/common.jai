@@ -1,7 +1,3 @@
-// The examples share window presentation and editor overlays through the base,
-// plus the small GPU resources that are not tied to a particular material
-// renderer. Material renderer ownership and draw calls stay visible per file.
-
 #scope_file
 Simp :: #import "Simp";
 #scope_export
@@ -37,6 +33,11 @@ end_example_render :: (base: *Windowed_Program_3D_Base) {
     drain_ui_audio_events(*base.wp);
     present(base);
 }
+
+/*
+Here we define what a windowed program 3d is, we do this by literally just enforcing that
+for the types we call the following proc on, the procs we call must exist for that type.
+*/
 
 run_example_frame :: (
     program: *$Program,

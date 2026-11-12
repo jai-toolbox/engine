@@ -47,13 +47,20 @@ Network :: #import "tbx/network";
 #load "crosshair.jai";
 #load "windowed_program.jai";
 #load "software_windowed_program.jai";
+
 #load "windowed_program_2d.jai";
+
+// windowed program 3d's module is not loaded here because the idea was that
+// they were too specific? idk maybe they imported physics or something
+// and we didn't want to require that.
+
 #load "windowed_program_3d_base/picking.jai";
 #load "windowed_program_3d_base/transform_editing.jai";
 #load "windowed_program_3d_base/view_axis_gizmo.jai";
 #load "windowed_program_3d_base/camera_path.jai";
 #load "windowed_program_3d_base/camera_modes.jai";
 #load "windowed_program_3d_base/windowed_program_3d_base.jai";
+
 #load "windowed_menu_program.jai";
 #load "crosshair_editor.jai";
 #load "crosshair_page.jai";

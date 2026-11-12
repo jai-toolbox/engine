@@ -13,6 +13,10 @@ init :: (using program: *Windowed_Program_3D_Vertex_Colors) {
     init(*renderer);
 }
 
+run :: (using program: *Windowed_Program_3D_Vertex_Colors) {
+    while !end_program run_example_frame(program, *base_3d);
+}
+
 deinit :: (using program: *Windowed_Program_3D_Vertex_Colors) {
     for *renderable: renderables deinit(renderable, *renderer);
     array_free(renderables);
@@ -58,6 +62,8 @@ get_selected_renderable :: (using program: *Windowed_Program_3D_Vertex_Colors) -
     return *renderables[index];
 }
 
+// there is probably no reason to do to procs here.
+
 per_frame_update :: (using program: *Windowed_Program_3D_Vertex_Colors) {
     per_frame_update(*base_3d);
     apply_editor_transform(program, *base_3d);
@@ -74,8 +80,4 @@ render_scene :: (using program: *Windowed_Program_3D_Vertex_Colors) {
     render(*renderer);
     end_geometry_render(*base_3d);
     end_example_render(*base_3d);
-}
-
-run :: (using program: *Windowed_Program_3D_Vertex_Colors) {
-    while !end_program run_example_frame(program, *base_3d);
 }
