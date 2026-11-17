@@ -149,17 +149,14 @@ set_sound_position :: (stream: *Sound_Player.Sound_Stream, position: Vector3) {
 
 
 update_listener_orientation :: (position: Vector3, yaw: float) {
-    yaw_quat: Quaternion;
-    set_from_axis_and_angle(*yaw_quat, 0, 0, 1, -yaw);
+    camera: Camera;
+    camera.position = position;
+    camera.yaw = yaw;
+    update_listener_orientation(*camera);
+}
 
-    rotation_y: Quaternion;
-    set_from_axis_and_angle(*rotation_y, 0, 1, 0, PI/2);
-
-    rotation_z: Quaternion;
-    set_from_axis_and_angle(*rotation_z, 0, 0, 1, PI/2);
-
-    correction_quat := rotation_z * rotation_y;
-    listener_orientation := yaw_quat * correction_quat;
-
-    Sound_Player.update_listener(position, listener_orientation);
+// Sound_Player's native axes are +X forward, +Y left, +Z up, matching WORLD_*.
+// Use the camera rotation directly, including pitch and a custom world-up.
+update_listener_orientation :: (camera: *Camera) {
+    Sound_Player.update_listener(camera.position + camera.offset, get_rotation(camera));
 }

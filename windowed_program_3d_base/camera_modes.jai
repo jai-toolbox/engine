@@ -116,7 +116,7 @@ update_camera_matrices :: (using wp3b: *Windowed_Program_3D_Base, width: s32, he
     if orthographic_projection_active {
         half_h := orthographic_view_height * 0.5;
         half_w := half_h * cast(float32) max(width, 1) / cast(float32) max(height, 1);
-        camera_to_clip = orthographic_projection_matrix(-half_w, half_w, -half_h, half_h,
+        camera_to_clip = make_world_orthographic_projection_matrix(-half_w, half_w, -half_h, half_h,
             -1000.0, 1000.0, depth_range_01 = false);
     } else camera_to_clip = get_projection_matrix(*camera, width, height);
 }

@@ -85,7 +85,7 @@ Orientation :: struct {
     up: Vector3;
 }
 
-STANDARD_ORIENTATION :: #run Orientation.{X3, -Y3, Z3};
+STANDARD_ORIENTATION :: #run Orientation.{WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
 GL_ORIENTATION :: Orientation.{Z3, X3, Y3};
 NEGATIVE_Z_GL_ORIENTATION :: #run Orientation.{-Z3, X3, Y3};
 
@@ -441,11 +441,11 @@ update_orthographic_pan :: (
 
 get_grid_plane :: (using wp3b: *Windowed_Program_3D_Base) -> Grid_Plane {
     if is_plane_camera_mode(camera_mode) return get_camera_plane(camera_mode);
-    if !orthographic_projection_active return .XZ;
+    if !orthographic_projection_active return .XY;
 
     plane, alignment := get_dominant_axis(wp3b);
     if alignment >= axis_alignment_threshold return plane;
-    return .XZ;
+    return .XY;
 }
 
 select_at_mouse :: (
@@ -903,7 +903,7 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
                     key_pressed(xx #char " "),
                     key_pressed(Input.Key_Code.SHIFT),
                 };
-                camera_velocity = get_new_god_mode_velocity(camera_velocity, get_forward(*camera), gmi, delta_time);
+                camera_velocity = get_new_god_mode_velocity(camera_velocity, get_forward(*camera), gmi, delta_time, up = camera.world_up);
         }
     }
 
@@ -934,7 +934,7 @@ per_frame_update :: (using wp3b: *Windowed_Program_3D_Base) {
     }
 
     update_orthographic_pan(wp3b, vw, vh);
-    update_listener_orientation(camera.position, camera.yaw);
+    update_listener_orientation(*camera);
 
     update_camera_matrices(wp3b, vw, vh);
 

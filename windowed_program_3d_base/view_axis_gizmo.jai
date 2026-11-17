@@ -130,8 +130,9 @@ render_view_axis_gizmo :: (
             axis.world_direction.z,
             0,
         };
-        axis.screen_direction = .{view_direction_4.x, -view_direction_4.y};
-        axis.view_depth = view_direction_4.z;
+        view_direction := Vector3.{view_direction_4.x, view_direction_4.y, view_direction_4.z};
+        axis.screen_direction = .{dot(view_direction, WORLD_RIGHT), -dot(view_direction, WORLD_UP)};
+        axis.view_depth = -dot(view_direction, WORLD_FORWARD);
     }
 
     /*
@@ -172,7 +173,7 @@ render_view_axis_gizmo :: (
     }
 
     /*
-    camera-space Z increases toward the viewer. Painter-sort the half-arms
+    Negative camera-forward depth increases toward the viewer. Painter-sort the half-arms
     from far to near and insert the origin hub at camera-space depth zero.
     */
     for i: 0..arms.count - 2 {
