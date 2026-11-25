@@ -211,8 +211,8 @@ example_light_clip_matrix :: (
 ) -> Matrix4 {
     normalized_direction := normalize(direction);
     eye := center - normalized_direction * depth_extent * 0.5;
-    up_hint := Vector3.{0, 1, 0};
-    if abs(dot(up_hint, normalized_direction)) > 0.95 up_hint = .{1, 0, 0};
+    up_hint := WORLD_UP;
+    if abs(dot(up_hint, normalized_direction)) > 0.95 up_hint = WORLD_FORWARD;
     right := normalize(cross(up_hint, normalized_direction));
     up := cross(normalized_direction, right);
 
